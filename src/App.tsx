@@ -5,7 +5,7 @@ const products = [
     id: 1,
     name: "Молоко",
     price: "188 ₽ / 1л",
-    image: "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b"
+    image: "/images/milk.jpg"
   }
 ];
 
@@ -62,3 +62,4 @@ const styles = {
     cursor: "pointer"
   }
 };
+
