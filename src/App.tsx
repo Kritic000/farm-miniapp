@@ -35,12 +35,38 @@ function money(n: number) {
   return new Intl.NumberFormat("ru-RU").format(Math.round(n));
 }
 
+type Toast = { type: "error" | "success" | "info"; text: string } | null;
+
+const PRODUCTS_CACHE_KEY = "farm_products_cache_v1";
+const PRODUCTS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 минут
+
+function loadProductsCache(): { ts: number; products: Product[] } | null {
+  try {
+    const raw = localStorage.getItem(PRODUCTS_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.ts || !Array.isArray(parsed?.products)) return null;
+    return { ts: parsed.ts, products: parsed.products };
+  } catch {
+    return null;
+  }
+}
+
+function saveProductsCache(products: Product[]) {
+  try {
+    localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), products }));
+  } catch {}
+}
+
 export default function App() {
   // === ВАЖНО: токен должен совпадать с API_TOKEN в Apps Script ===
   const API_TOKEN = "Kjhytccb18@";
 
   const [loading, setLoading] = useState(true);
+  const [loadingHint, setLoadingHint] = useState<string>("");
   const [error, setError] = useState<string>("");
+  const [toast, setToast] = useState<Toast>(null);
+
   const [products, setProducts] = useState<Product[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>("Все");
 
@@ -50,12 +76,13 @@ export default function App() {
   const [address, setAddress] = useState("");
   const [comment, setComment] = useState("");
 
-  // новые поля
+  // поля клиента
   const [customerName, setCustomerName] = useState("");
   const [phone, setPhone] = useState("");
 
   const [sending, setSending] = useState(false);
 
+  // Telegram init
   useEffect(() => {
     const w = window as any;
     const tg = w?.Telegram?.WebApp;
@@ -67,12 +94,32 @@ export default function App() {
     }
   }, []);
 
+  // Автозакрытие toast
   useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 2500);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  // Быстрая загрузка ассортимента: сначала кэш, потом сеть
+  useEffect(() => {
+    let cancelled = false;
+
     (async () => {
       try {
         setLoading(true);
         setError("");
+        setLoadingHint("");
 
+        // 1) показать кэш мгновенно
+        const cached = loadProductsCache();
+        if (cached && Date.now() - cached.ts < PRODUCTS_CACHE_TTL_MS) {
+          setProducts(cached.products);
+          setLoading(false);
+          setLoadingHint("Обновляем ассортимент…");
+        }
+
+        // 2) подтянуть с сервера (всегда, чтобы обновлялось)
         const url = `${API_URL}?action=products&ts=${Date.now()}`;
         const res = await fetch(url, { method: "GET" });
         const data = await res.json();
@@ -81,20 +128,29 @@ export default function App() {
 
         const list: Product[] = data.products || [];
 
-        // Если ты пока не добавил колонку image в Products,
-        // можно временно маппить картинки по ID вот так:
+        // Если нет image в таблице — можно маппить по id (по желанию)
         const withImages = list.map((p) => {
           if (!p.image && p.id === "P001") return { ...p, image: "/images/milk.jpg" };
           return p;
         });
 
+        if (cancelled) return;
         setProducts(withImages);
-      } catch (e: any) {
-        setError(e?.message || "Ошибка загрузки товаров");
-      } finally {
+        saveProductsCache(withImages);
+
         setLoading(false);
+        setLoadingHint("");
+      } catch (e: any) {
+        if (cancelled) return;
+        setError(e?.message || "Ошибка загрузки товаров");
+        setLoading(false);
+        setLoadingHint("");
       }
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const categories = useMemo(() => {
@@ -121,6 +177,7 @@ export default function App() {
       next[p.id] = { product: p, qty: (cur?.qty || 0) + 1 };
       return next;
     });
+    setToast({ type: "info", text: "Добавлено в корзину" });
   }
 
   function setQty(productId: string, qty: number) {
@@ -136,21 +193,19 @@ export default function App() {
     return cart[productId]?.qty || 0;
   }
 
+  function validateCheckout(): string | null {
+    if (customerName.trim().length < 2) return "Укажи имя (минимум 2 символа).";
+    if (phone.trim().length < 6) return "Укажи телефон (минимум 6 символов).";
+    if (address.trim().length < 5) return "Укажи адрес доставки (минимум 5 символов).";
+    if (cartItems.length === 0) return "Корзина пустая.";
+    return null;
+  }
+
   async function submitOrder() {
-    if (customerName.trim().length < 2) {
-      alert("Укажи имя (минимум 2 символа).");
-      return;
-    }
-    if (phone.trim().length < 6) {
-      alert("Укажи телефон (минимум 6 символов).");
-      return;
-    }
-    if (address.trim().length < 5) {
-      alert("Укажи адрес доставки (минимум 5 символов).");
-      return;
-    }
-    if (cartItems.length === 0) {
-      alert("Корзина пустая.");
+    const validationError = validateCheckout();
+    if (validationError) {
+      // ВАЖНО: без alert — иначе Telegram иногда “ломает” ввод
+      setToast({ type: "error", text: validationError });
       return;
     }
 
@@ -188,7 +243,8 @@ export default function App() {
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
       if (data?.error) throw new Error(data.error);
 
-      alert("✅ Заказ отправлен! Мы свяжемся с вами для подтверждения.");
+      setToast({ type: "success", text: "✅ Заказ отправлен! Мы свяжемся для подтверждения." });
+
       setCart({});
       setAddress("");
       setComment("");
@@ -196,7 +252,7 @@ export default function App() {
       setPhone("");
       setTab("catalog");
     } catch (e: any) {
-      alert(`Не удалось отправить заказ: ${e?.message || "Ошибка"}`);
+      setToast({ type: "error", text: `Не удалось отправить заказ: ${e?.message || "Ошибка"}` });
     } finally {
       setSending(false);
     }
@@ -204,6 +260,17 @@ export default function App() {
 
   return (
     <div style={styles.page}>
+      {/* Toast (встроенное уведомление вместо alert) */}
+      {toast && (
+        <div style={{ ...styles.toast, ...(toast.type === "error" ? styles.toastError : {}),
+          ...(toast.type === "success" ? styles.toastSuccess : {}),
+          ...(toast.type === "info" ? styles.toastInfo : {}),
+        }}>
+          <div style={{ fontWeight: 900 }}>{toast.text}</div>
+          <button style={styles.toastClose} onClick={() => setToast(null)}>×</button>
+        </div>
+      )}
+
       <div style={styles.header}>
         <div style={styles.title}>Каталог</div>
 
@@ -224,7 +291,8 @@ export default function App() {
         </div>
       </div>
 
-      {loading && <div style={styles.info}>Загрузка…</div>}
+      {loading && <div style={styles.info}>Загрузка ассортимента…</div>}
+      {!loading && loadingHint && <div style={styles.infoMuted}>{loadingHint}</div>}
       {error && <div style={{ ...styles.info, color: "#b00020" }}>{error}</div>}
 
       {!loading && !error && (
@@ -264,7 +332,6 @@ export default function App() {
                           {money(p.price)} ₽ / {p.unit}
                         </div>
 
-                        {/* Вместо "В корзину" — счетчик */}
                         {q === 0 ? (
                           <button style={styles.buyBtn} onClick={() => addToCart(p)}>
                             В корзину
@@ -346,6 +413,7 @@ export default function App() {
                 value={customerName}
                 onChange={(e) => setCustomerName(e.target.value)}
                 placeholder="Как к вам обращаться?"
+                autoComplete="name"
               />
 
               <label style={styles.label}>
@@ -356,6 +424,8 @@ export default function App() {
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="+7..."
+                autoComplete="tel"
+                inputMode="tel"
               />
 
               <label style={styles.label}>
@@ -366,6 +436,7 @@ export default function App() {
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
                 placeholder="улица, дом, подъезд, этаж, кв."
+                autoComplete="street-address"
               />
 
               <label style={styles.label}>Комментарий (необязательно)</label>
@@ -407,6 +478,34 @@ const styles: Record<string, React.CSSProperties> = {
     background: "#f2f3f5",
     minHeight: "100vh",
   },
+
+  // toast
+  toast: {
+    position: "sticky",
+    top: 8,
+    zIndex: 9999,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    padding: "12px 12px",
+    borderRadius: 12,
+    boxShadow: "0 8px 20px rgba(0,0,0,0.18)",
+    marginBottom: 10,
+    border: "1px solid rgba(0,0,0,0.06)",
+  },
+  toastError: { background: "#ffe8ea", color: "#7a0010" },
+  toastSuccess: { background: "#e7f6ea", color: "#0e4b1b" },
+  toastInfo: { background: "#eef2ff", color: "#1c2b6b" },
+  toastClose: {
+    border: 0,
+    background: "transparent",
+    fontSize: 22,
+    lineHeight: 1,
+    cursor: "pointer",
+    padding: 4,
+  },
+
   header: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 },
   title: { fontSize: 34, fontWeight: 900, letterSpacing: -0.5 },
   tabs: { display: "flex", gap: 8 },
@@ -432,7 +531,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
   chipActive: { background: "#1f7a1f", color: "#fff", borderColor: "#1f7a1f" },
 
-  info: { padding: 12 },
+  info: { padding: 12, fontWeight: 700 },
+  infoMuted: { padding: 8, color: "#555" },
+
   list: { display: "grid", gap: 12 },
   card: {
     background: "#fff",
