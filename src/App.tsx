@@ -7,8 +7,9 @@ type Product = {
   name: string;
   unit: string;
   price: number;
-  image?: string; // например "/images/milk.jpg"
+  active?: boolean; // TRUE/FALSE из таблицы
   sort?: number;
+  image?: string; // например "/images/milk.jpg"
 };
 
 type CartItem = {
@@ -17,6 +18,9 @@ type CartItem = {
 };
 
 type View = "catalog" | "cart" | "checkout";
+
+const CATEGORIES = ["Молочка", "Сыры", "Колбасные изделия", "Курица"] as const;
+type Category = (typeof CATEGORIES)[number] | "Все";
 
 function rub(n: number) {
   return new Intl.NumberFormat("ru-RU").format(n) + " ₽";
@@ -27,6 +31,8 @@ export default function App() {
   const theme = tg?.themeParams || {};
 
   const [view, setView] = useState<View>("catalog");
+  const [category, setCategory] = useState<Category>("Все");
+
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -37,7 +43,15 @@ export default function App() {
   const [submitting, setSubmitting] = useState(false);
   const [orderOk, setOrderOk] = useState<string>("");
 
-  // грузим товары
+  // Telegram init
+  useEffect(() => {
+    try {
+      tg?.ready?.();
+      tg?.expand?.();
+    } catch {}
+  }, [tg]);
+
+  // Load products
   useEffect(() => {
     setLoading(true);
     setError("");
@@ -51,14 +65,6 @@ export default function App() {
       .finally(() => setLoading(false));
   }, []);
 
-  // немного подружимся с Telegram
-  useEffect(() => {
-    try {
-      tg?.ready?.();
-      tg?.expand?.();
-    } catch {}
-  }, [tg]);
-
   const cartItems = useMemo(() => Object.values(cart), [cart]);
 
   const cartCount = useMemo(
@@ -70,6 +76,21 @@ export default function App() {
     () => cartItems.reduce((s, it) => s + it.qty * it.product.price, 0),
     [cartItems]
   );
+
+  const visibleProducts = useMemo(() => {
+    // active в таблице может прийти как TRUE/FALSE или "TRUE"/"FALSE"
+    const isActive = (p: Product) => {
+      if (p.active === undefined) return true;
+      if (typeof p.active === "boolean") return p.active;
+      return String(p.active).toLowerCase() === "true";
+    };
+
+    return products
+      .filter(isActive)
+      .filter((p) => (category === "Все" ? true : (p.category || "") === category))
+      .slice()
+      .sort((a, b) => (a.sort ?? 9999) - (b.sort ?? 9999));
+  }, [products, category]);
 
   function addToCart(p: Product) {
     setCart((prev) => {
@@ -114,6 +135,7 @@ export default function App() {
 
   async function submitOrder() {
     setOrderOk("");
+
     if (cartCount === 0) {
       alert("Корзина пустая");
       setView("catalog");
@@ -134,6 +156,7 @@ export default function App() {
         total,
         items: cartItems.map((it) => ({
           id: it.product.id,
+          category: it.product.category || "",
           name: it.product.name,
           unit: it.product.unit,
           price: it.product.price,
@@ -161,11 +184,12 @@ export default function App() {
         throw new Error(data?.error || "Ошибка отправки заказа");
       }
 
-      setOrderOk(`Заказ принят ✅ №${data.orderId || ""}`.trim());
+      setOrderOk(`Заказ принят ✅ ${data.orderId ? "№" + data.orderId : ""}`.trim());
       setCart({});
       setAddress("");
       setComment("");
       setView("catalog");
+      setCategory("Все");
 
       try {
         tg?.HapticFeedback?.notificationOccurred?.("success");
@@ -180,6 +204,7 @@ export default function App() {
     }
   }
 
+  // Theme colors
   const bg = theme.bg_color || "#f4f6f9";
   const text = theme.text_color || "#111";
   const cardBg = theme.secondary_bg_color || "#fff";
@@ -187,21 +212,24 @@ export default function App() {
   const btnText = theme.button_text_color || "#fff";
 
   return (
-    <div style={{ minHeight: "100vh", background: bg, color: text, padding: 14, fontFamily: "Arial" }}>
+    <div
+      style={{
+        minHeight: "100vh",
+        background: bg,
+        color: text,
+        padding: 14,
+        fontFamily: "Arial",
+      }}
+    >
+      {/* Header */}
       <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 14 }}>
         <div style={{ fontSize: 28, fontWeight: 800 }}>Каталог</div>
 
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-          <button
-            onClick={() => setView("catalog")}
-            style={tabStyle(view === "catalog", cardBg)}
-          >
+          <button onClick={() => setView("catalog")} style={tabStyle(view === "catalog", cardBg)}>
             Товары
           </button>
-          <button
-            onClick={() => setView("cart")}
-            style={tabStyle(view === "cart", cardBg)}
-          >
+          <button onClick={() => setView("cart")} style={tabStyle(view === "cart", cardBg)}>
             🛒 Корзина ({cartCount})
           </button>
         </div>
@@ -213,44 +241,81 @@ export default function App() {
         </div>
       )}
 
+      {/* Catalog */}
       {view === "catalog" && (
         <>
+          {/* Categories */}
+          <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 10, marginBottom: 6 }}>
+            <button onClick={() => setCategory("Все")} style={chip(category === "Все")}>
+              Все
+            </button>
+            {CATEGORIES.map((c) => (
+              <button key={c} onClick={() => setCategory(c)} style={chip(category === c)}>
+                {c}
+              </button>
+            ))}
+          </div>
+
           {loading && <div>Загрузка…</div>}
           {error && <div style={{ color: "crimson" }}>{error}</div>}
 
-          {!loading && !error && products.map((p) => (
-            <div key={p.id} style={{ background: cardBg, borderRadius: 12, overflow: "hidden", marginBottom: 12, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
-              {p.image ? (
-                <img src={p.image} alt={p.name} style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }} />
-              ) : null}
-
-              <div style={{ padding: 12 }}>
-                <div style={{ fontSize: 18, fontWeight: 700 }}>{p.name}</div>
-                <div style={{ opacity: 0.8, marginTop: 6 }}>
-                  {rub(p.price)} / {p.unit}
-                </div>
-
-                <button
-                  onClick={() => addToCart(p)}
-                  style={{
-                    marginTop: 10,
-                    background: btn,
-                    color: btnText,
-                    border: "none",
-                    padding: "10px 14px",
-                    borderRadius: 10,
-                    cursor: "pointer",
-                    fontWeight: 700,
-                  }}
-                >
-                  В корзину
-                </button>
-              </div>
+          {!loading && !error && visibleProducts.length === 0 && (
+            <div style={{ background: cardBg, padding: 12, borderRadius: 10 }}>
+              В этой категории пока нет товаров.
             </div>
-          ))}
+          )}
+
+          {!loading &&
+            !error &&
+            visibleProducts.map((p) => (
+              <div
+                key={p.id}
+                style={{
+                  background: cardBg,
+                  borderRadius: 12,
+                  overflow: "hidden",
+                  marginBottom: 12,
+                  boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+                }}
+              >
+                {p.image ? (
+                  <img
+                    src={p.image}
+                    alt={p.name}
+                    style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }}
+                  />
+                ) : null}
+
+                <div style={{ padding: 12 }}>
+                  <div style={{ fontSize: 18, fontWeight: 800 }}>{p.name}</div>
+                  <div style={{ opacity: 0.75, marginTop: 4 }}>{p.category}</div>
+
+                  <div style={{ opacity: 0.85, marginTop: 8 }}>
+                    {rub(p.price)} / {p.unit}
+                  </div>
+
+                  <button
+                    onClick={() => addToCart(p)}
+                    style={{
+                      marginTop: 10,
+                      background: btn,
+                      color: btnText,
+                      border: "none",
+                      padding: "10px 14px",
+                      borderRadius: 10,
+                      cursor: "pointer",
+                      fontWeight: 800,
+                    }}
+                  >
+                    В корзину
+                  </button>
+                </div>
+              </div>
+            ))}
         </>
       )}
 
+      {/* Cart */}
       {view === "cart" && (
         <div style={{ background: cardBg, borderRadius: 12, padding: 12 }}>
           {cartCount === 0 ? (
@@ -265,21 +330,34 @@ export default function App() {
           ) : (
             <>
               {cartItems.map((it) => (
-                <div key={it.product.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 0", borderBottom: "1px solid rgba(0,0,0,0.08)" }}>
+                <div
+                  key={it.product.id}
+                  style={{
+                    display: "flex",
+                    gap: 10,
+                    alignItems: "center",
+                    padding: "10px 0",
+                    borderBottom: "1px solid rgba(0,0,0,0.08)",
+                  }}
+                >
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700 }}>{it.product.name}</div>
-                    <div style={{ opacity: 0.8, marginTop: 4 }}>
+                    <div style={{ fontWeight: 800 }}>{it.product.name}</div>
+                    <div style={{ opacity: 0.75, marginTop: 4 }}>
                       {rub(it.product.price)} / {it.product.unit}
                     </div>
                   </div>
 
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <button onClick={() => dec(it.product.id)} style={qtyBtn(cardBg)}>−</button>
-                    <div style={{ minWidth: 22, textAlign: "center", fontWeight: 700 }}>{it.qty}</div>
-                    <button onClick={() => inc(it.product.id)} style={qtyBtn(cardBg)}>+</button>
+                    <button onClick={() => dec(it.product.id)} style={qtyBtn(cardBg)}>
+                      −
+                    </button>
+                    <div style={{ minWidth: 22, textAlign: "center", fontWeight: 800 }}>{it.qty}</div>
+                    <button onClick={() => inc(it.product.id)} style={qtyBtn(cardBg)}>
+                      +
+                    </button>
                   </div>
 
-                  <div style={{ width: 90, textAlign: "right", fontWeight: 700 }}>
+                  <div style={{ width: 90, textAlign: "right", fontWeight: 800 }}>
                     {rub(it.qty * it.product.price)}
                   </div>
 
@@ -290,8 +368,8 @@ export default function App() {
               ))}
 
               <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 12, fontSize: 16 }}>
-                <div style={{ fontWeight: 800 }}>Итого</div>
-                <div style={{ fontWeight: 800 }}>{rub(total)}</div>
+                <div style={{ fontWeight: 900 }}>Итого</div>
+                <div style={{ fontWeight: 900 }}>{rub(total)}</div>
               </div>
 
               <div style={{ marginTop: 12, display: "flex", gap: 10 }}>
@@ -307,29 +385,32 @@ export default function App() {
         </div>
       )}
 
+      {/* Checkout */}
       {view === "checkout" && (
         <div style={{ background: cardBg, borderRadius: 12, padding: 12 }}>
-          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 10 }}>Оформление</div>
+          <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 10 }}>Оформление</div>
 
-          <label style={{ display: "block", fontWeight: 700, marginBottom: 6 }}>Адрес доставки *</label>
+          <label style={{ display: "block", fontWeight: 800, marginBottom: 6 }}>Адрес доставки *</label>
           <input
             value={address}
             onChange={(e) => setAddress(e.target.value)}
             placeholder="Город, улица, дом, подъезд, этаж, квартира"
-            style={inputStyle(cardBg, text)}
+            style={inputStyle(text)}
           />
 
-          <label style={{ display: "block", fontWeight: 700, marginTop: 12, marginBottom: 6 }}>Комментарий (необязательно)</label>
+          <label style={{ display: "block", fontWeight: 800, marginTop: 12, marginBottom: 6 }}>
+            Комментарий (необязательно)
+          </label>
           <input
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             placeholder="Например: код домофона, удобное время"
-            style={inputStyle(cardBg, text)}
+            style={inputStyle(text)}
           />
 
           <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between" }}>
-            <div style={{ fontWeight: 800 }}>Итого</div>
-            <div style={{ fontWeight: 800 }}>{rub(total)}</div>
+            <div style={{ fontWeight: 900 }}>Итого</div>
+            <div style={{ fontWeight: 900 }}>{rub(total)}</div>
           </div>
 
           <div style={{ marginTop: 12, display: "flex", gap: 10 }}>
@@ -350,6 +431,7 @@ export default function App() {
   );
 }
 
+/* Styles helpers */
 function tabStyle(active: boolean, cardBg: string): React.CSSProperties {
   return {
     background: active ? "rgba(46,125,50,0.12)" : cardBg,
@@ -357,7 +439,20 @@ function tabStyle(active: boolean, cardBg: string): React.CSSProperties {
     padding: "8px 10px",
     borderRadius: 10,
     cursor: "pointer",
-    fontWeight: 700,
+    fontWeight: 800,
+    whiteSpace: "nowrap",
+  };
+}
+
+function chip(active: boolean): React.CSSProperties {
+  return {
+    border: "1px solid rgba(0,0,0,0.12)",
+    background: active ? "rgba(46,125,50,0.15)" : "#fff",
+    padding: "8px 10px",
+    borderRadius: 999,
+    cursor: "pointer",
+    fontWeight: 900,
+    whiteSpace: "nowrap",
   };
 }
 
@@ -369,7 +464,7 @@ function primary(bg: string, color: string): React.CSSProperties {
     padding: "10px 14px",
     borderRadius: 10,
     cursor: "pointer",
-    fontWeight: 800,
+    fontWeight: 900,
   };
 }
 
@@ -380,7 +475,7 @@ function secondary(cardBg: string): React.CSSProperties {
     padding: "10px 14px",
     borderRadius: 10,
     cursor: "pointer",
-    fontWeight: 800,
+    fontWeight: 900,
   };
 }
 
@@ -404,11 +499,12 @@ function linkBtn(): React.CSSProperties {
     border: "none",
     cursor: "pointer",
     color: "#2e7d32",
-    fontWeight: 700,
+    fontWeight: 800,
+    whiteSpace: "nowrap",
   };
 }
 
-function inputStyle(cardBg: string, text: string): React.CSSProperties {
+function inputStyle(text: string): React.CSSProperties {
   return {
     width: "100%",
     boxSizing: "border-box",
