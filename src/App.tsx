@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { API_URL } from "./config";
 
 type Product = {
   id: string;
@@ -18,8 +17,6 @@ type CartItem = {
   price: number;
   qty: number;
 };
-
-const API_TOKEN = "Kjhytccb18@"; // Должен совпадать с API_TOKEN в Apps Script
 
 function rub(n: number) {
   return new Intl.NumberFormat("ru-RU").format(Math.round(n)) + " ₽";
@@ -78,7 +75,7 @@ export default function App() {
     (async () => {
       try {
         setLoading(true);
-        const res = await fetch(`${API_URL}?action=products`, {
+        const res = await fetch(`/api/products`, {
           method: "GET",
           headers: { Accept: "application/json" },
         });
@@ -156,7 +153,6 @@ export default function App() {
       }));
 
       const payload = {
-        token: API_TOKEN,
         tg: tgUser,
         address: address.trim(),
         comment: comment.trim(),
@@ -164,14 +160,9 @@ export default function App() {
         total,
       };
 
-      // Для Apps Script лучше text/plain
-      const res = await fetch(`${API_URL}?action=order`, {
+      const res = await fetch(`/api/order`, {
         method: "POST",
-        headers: {
-          "Content-Type": "text/plain;charset=UTF-8",
-          Accept: "application/json",
-          "X-Api-Token": API_TOKEN,
-        },
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify(payload),
       });
 
