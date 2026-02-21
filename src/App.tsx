@@ -1,48 +1,64 @@
-import { useEffect, useState } from "react";
-import { API_URL } from "./config";
+import React from "react";
 
-type Product = {
-  id: string;
-  name: string;
-  price: number;
-  unit: string;
-};
+const products = [
+  {
+    id: 1,
+    name: "Молоко",
+    price: "188 ₽ / 1л",
+    image: "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b"
+  }
+];
 
 export default function App() {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    fetch(`${API_URL}?action=products`)
-      .then(res => res.json())
-      .then(data => setProducts(data.products || []))
-      .catch(() => setError("Не удалось загрузить каталог"));
-  }, []);
-
   return (
-    <div style={{ padding: 20, fontFamily: "Arial" }}>
-      <h1>Каталог</h1>
+    <div style={styles.container}>
+      <h1 style={styles.title}>Каталог</h1>
 
-      {error && <p style={{ color: "red" }}>{error}</p>}
-
-      {products.map(p => (
-        <div
-          key={p.id}
-          style={{
-            border: "1px solid #ddd",
-            padding: 10,
-            marginBottom: 10,
-            borderRadius: 6
-          }}
-        >
-          <b>{p.name}</b>
-          <div>
-            {p.price} ₽ / {p.unit}
+      {products.map((product) => (
+        <div key={product.id} style={styles.card}>
+          <img src={product.image} alt={product.name} style={styles.image} />
+          <div style={styles.info}>
+            <h3>{product.name}</h3>
+            <p>{product.price}</p>
+            <button style={styles.button}>В корзину</button>
           </div>
         </div>
       ))}
-
-      {products.length === 0 && !error && <p>Загрузка...</p>}
     </div>
   );
 }
+
+const styles = {
+  container: {
+    background: "#f4f6f9",
+    minHeight: "100vh",
+    padding: "20px",
+    fontFamily: "Arial"
+  },
+  title: {
+    marginBottom: "20px"
+  },
+  card: {
+    background: "#ffffff",
+    borderRadius: "12px",
+    overflow: "hidden",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+    marginBottom: "20px"
+  },
+  image: {
+    width: "100%",
+    height: "180px",
+    objectFit: "cover"
+  },
+  info: {
+    padding: "15px"
+  },
+  button: {
+    background: "#2e7d32",
+    color: "white",
+    border: "none",
+    padding: "10px 15px",
+    borderRadius: "8px",
+    cursor: "pointer"
+  }
+};
