@@ -173,13 +173,23 @@ export default function App() {
           : null,
       };
 
+      // ✅ ВАЖНО: text/plain чтобы Telegram/браузер не делал CORS preflight
       const res = await fetch(`${API_URL}?action=order`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
+      // Apps Script иногда отдаёт 200, но не JSON — поэтому аккуратно парсим
+      const text = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(text);
+      } catch {
+        // если пришло не JSON
+        data = { ok: false, error: text || "Ответ не JSON" };
+      }
+
       if (!res.ok || data?.ok !== true) {
         throw new Error(data?.error || "Ошибка отправки заказа");
       }
