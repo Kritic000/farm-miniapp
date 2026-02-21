@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { API_URL } from "./config";
-import { getTelegramUser, isTelegramWebApp } from "./telegram";
+import { getTelegramUser } from "./telegram";
 
 type Product = {
   id: string;
@@ -20,10 +20,14 @@ type CartItem = {
   qty: number;
 };
 
-const API_TOKEN = "Kjhytccb18@"; // <-- твой токен (должен совпадать с Apps Script)
+const API_TOKEN = "Kjhytccb18@"; // <-- ДОЛЖЕН совпадать с API_TOKEN в Apps Script
 
 function rub(n: number) {
   return new Intl.NumberFormat("ru-RU").format(Math.round(n)) + " ₽";
+}
+
+function isTelegramWebAppLocal() {
+  return typeof (window as any).Telegram?.WebApp !== "undefined";
 }
 
 export default function App() {
@@ -33,16 +37,22 @@ export default function App() {
   const [tab, setTab] = useState<"products" | "cart" | "checkout">("products");
 
   const [cart, setCart] = useState<Record<string, CartItem>>({});
-  const cartCount = useMemo(() => Object.values(cart).reduce((s, it) => s + it.qty, 0), [cart]);
-  const total = useMemo(() => Object.values(cart).reduce((s, it) => s + it.qty * it.price, 0), [cart]);
+  const cartCount = useMemo(
+    () => Object.values(cart).reduce((s, it) => s + it.qty, 0),
+    [cart]
+  );
+  const total = useMemo(
+    () => Object.values(cart).reduce((s, it) => s + it.qty * it.price, 0),
+    [cart]
+  );
 
   const [address, setAddress] = useState("");
   const [comment, setComment] = useState("");
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
-    // Попробуем красиво подогнать тему под Telegram
-    if (isTelegramWebApp()) {
+    // Подстроимся под Telegram WebApp (если открыто внутри Telegram)
+    if (isTelegramWebAppLocal()) {
       const tg = (window as any).Telegram?.WebApp;
       tg?.ready?.();
       tg?.expand?.();
@@ -55,11 +65,8 @@ export default function App() {
         setLoading(true);
         const res = await fetch(`${API_URL}?action=products`, {
           method: "GET",
-          headers: {
-            "Accept": "application/json",
-          },
+          headers: { Accept: "application/json" },
         });
-
         const data = await res.json();
         setProducts(Array.isArray(data.products) ? data.products : []);
       } catch (e) {
@@ -122,7 +129,8 @@ export default function App() {
 
       setSending(true);
 
-      const telegram = getTelegramUser(); // {id, username, first_name, last_name} или {}
+      // Важно: твой telegram.ts должен возвращать объект пользователя или {}
+      const telegram = getTelegramUser?.() || {};
 
       const items = Object.values(cart).map((it) => ({
         id: it.id,
@@ -133,9 +141,10 @@ export default function App() {
         sum: it.price * it.qty,
       }));
 
+      // Твой Apps Script ждёт body.tg (а не telegram) — поэтому отправляем tg
       const payload = {
-        token: API_TOKEN,            // <-- дублируем токен в body (на всякий)
-        telegram,                    // <-- Apps Script принимает telegram или tg
+        token: API_TOKEN,
+        tg: telegram,
         address: address.trim(),
         comment: comment.trim(),
         items,
@@ -145,9 +154,10 @@ export default function App() {
       const res = await fetch(`${API_URL}?action=order`, {
         method: "POST",
         headers: {
-          "Content-Type": "text/plain;charset=UTF-8", // важно для CORS в MiniApp
-          "Accept": "application/json",
-          "X-Api-Token": API_TOKEN,                  // <-- и в заголовке тоже
+          // Для Apps Script часто лучше text/plain, чем application/json
+          "Content-Type": "text/plain;charset=UTF-8",
+          Accept: "application/json",
+          "X-Api-Token": API_TOKEN,
         },
         body: JSON.stringify(payload),
       });
@@ -159,9 +169,8 @@ export default function App() {
         throw new Error(msg);
       }
 
-      alert(`Заказ отправлен! Номер: ${data.orderId || "—"}`);
+      alert("Заказ отправлен!");
 
-      // Сброс
       setCart({});
       setAddress("");
       setComment("");
@@ -174,7 +183,6 @@ export default function App() {
     }
   }
 
-  // Группировка по категориям
   const categories = useMemo(() => {
     const map = new Map<string, Product[]>();
     for (const p of products) {
@@ -184,7 +192,9 @@ export default function App() {
     }
     return Array.from(map.entries()).map(([name, list]) => ({
       name,
-      list: list.slice().sort((a, b) => (a.sort - b.sort) || a.name.localeCompare(b.name)),
+      list: list
+        .slice()
+        .sort((a, b) => (a.sort - b.sort) || a.name.localeCompare(b.name)),
     }));
   }, [products]);
 
@@ -224,7 +234,6 @@ export default function App() {
                         alt={p.name}
                         style={styles.cardImg}
                         onError={(ev) => {
-                          // если ссылка битая — скрываем
                           (ev.currentTarget as HTMLImageElement).style.display = "none";
                         }}
                       />
@@ -435,7 +444,13 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 12,
     padding: 12,
   },
-  cartName: { fontWeight: 900, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  cartName: {
+    fontWeight: 900,
+    fontSize: 15,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
   cartSum: { fontWeight: 900, minWidth: 90, textAlign: "right" },
 
   qty: { display: "flex", alignItems: "center", gap: 6 },
