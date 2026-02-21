@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { API_URL } from "./config";
-import { getTelegramUser } from "./telegram";
 
 type Product = {
   id: string;
@@ -20,10 +19,27 @@ type CartItem = {
   qty: number;
 };
 
-const API_TOKEN = "Kjhytccb18@"; // <-- ДОЛЖЕН совпадать с API_TOKEN в Apps Script
+const API_TOKEN = "Kjhytccb18@"; // Должен совпадать с API_TOKEN в Apps Script
 
 function rub(n: number) {
   return new Intl.NumberFormat("ru-RU").format(Math.round(n)) + " ₽";
+}
+
+function getTelegramUserLocal() {
+  try {
+    const tg = (window as any).Telegram?.WebApp;
+    const u = tg?.initDataUnsafe?.user;
+    if (!u) return {};
+    return {
+      id: u.id,
+      username: u.username,
+      first_name: u.first_name,
+      last_name: u.last_name,
+      language_code: u.language_code,
+    };
+  } catch {
+    return {};
+  }
 }
 
 function isTelegramWebAppLocal() {
@@ -51,7 +67,6 @@ export default function App() {
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
-    // Подстроимся под Telegram WebApp (если открыто внутри Telegram)
     if (isTelegramWebAppLocal()) {
       const tg = (window as any).Telegram?.WebApp;
       tg?.ready?.();
@@ -129,8 +144,7 @@ export default function App() {
 
       setSending(true);
 
-      // Важно: твой telegram.ts должен возвращать объект пользователя или {}
-      const telegram = getTelegramUser?.() || {};
+      const tgUser = getTelegramUserLocal();
 
       const items = Object.values(cart).map((it) => ({
         id: it.id,
@@ -141,20 +155,19 @@ export default function App() {
         sum: it.price * it.qty,
       }));
 
-      // Твой Apps Script ждёт body.tg (а не telegram) — поэтому отправляем tg
       const payload = {
         token: API_TOKEN,
-        tg: telegram,
+        tg: tgUser,
         address: address.trim(),
         comment: comment.trim(),
         items,
         total,
       };
 
+      // Для Apps Script лучше text/plain
       const res = await fetch(`${API_URL}?action=order`, {
         method: "POST",
         headers: {
-          // Для Apps Script часто лучше text/plain, чем application/json
           "Content-Type": "text/plain;charset=UTF-8",
           Accept: "application/json",
           "X-Api-Token": API_TOKEN,
