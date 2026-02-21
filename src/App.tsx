@@ -8,7 +8,8 @@ type Product = {
   unit: string;
   price: number;
   sort: number;
-  image?: string; // например: "/images/milk.jpg"
+  description?: string;
+  image?: string; // например "/images/milk.jpg"
 };
 
 type CartItem = {
@@ -48,9 +49,13 @@ export default function App() {
 
   const [address, setAddress] = useState("");
   const [comment, setComment] = useState("");
+
+  // новые поля
+  const [customerName, setCustomerName] = useState("");
+  const [phone, setPhone] = useState("");
+
   const [sending, setSending] = useState(false);
 
-  // Telegram expand / theme
   useEffect(() => {
     const w = window as any;
     const tg = w?.Telegram?.WebApp;
@@ -62,7 +67,6 @@ export default function App() {
     }
   }, []);
 
-  // Load products
   useEffect(() => {
     (async () => {
       try {
@@ -75,11 +79,12 @@ export default function App() {
 
         if (data?.error) throw new Error(data.error);
 
-        // Если хочешь фото — можно прописывать их здесь по id
-        // либо добавить отдельную колонку image в Google Sheet и возвращать её из Apps Script
-        const withImages: Product[] = (data.products || []).map((p: Product) => {
-          // пример: если файл лежит public/images/milk.jpg
-          if (p.id === "P001") return { ...p, image: "/images/milk.jpg" };
+        const list: Product[] = data.products || [];
+
+        // Если ты пока не добавил колонку image в Products,
+        // можно временно маппить картинки по ID вот так:
+        const withImages = list.map((p) => {
+          if (!p.image && p.id === "P001") return { ...p, image: "/images/milk.jpg" };
           return p;
         });
 
@@ -105,13 +110,9 @@ export default function App() {
 
   const cartItems = useMemo(() => Object.values(cart), [cart]);
 
-  const cartCount = useMemo(() => {
-    return cartItems.reduce((s, it) => s + it.qty, 0);
-  }, [cartItems]);
+  const cartCount = useMemo(() => cartItems.reduce((s, it) => s + it.qty, 0), [cartItems]);
 
-  const total = useMemo(() => {
-    return cartItems.reduce((s, it) => s + it.qty * it.product.price, 0);
-  }, [cartItems]);
+  const total = useMemo(() => cartItems.reduce((s, it) => s + it.qty * it.product.price, 0), [cartItems]);
 
   function addToCart(p: Product) {
     setCart((prev) => {
@@ -131,7 +132,19 @@ export default function App() {
     });
   }
 
+  function qtyOf(productId: string) {
+    return cart[productId]?.qty || 0;
+  }
+
   async function submitOrder() {
+    if (customerName.trim().length < 2) {
+      alert("Укажи имя (минимум 2 символа).");
+      return;
+    }
+    if (phone.trim().length < 6) {
+      alert("Укажи телефон (минимум 6 символов).");
+      return;
+    }
     if (address.trim().length < 5) {
       alert("Укажи адрес доставки (минимум 5 символов).");
       return;
@@ -146,6 +159,8 @@ export default function App() {
     const payload = {
       token: API_TOKEN,
       tg: tg || {},
+      name: customerName.trim(),
+      phone: phone.trim(),
       address: address.trim(),
       comment: comment.trim(),
       items: cartItems.map((it) => ({
@@ -164,7 +179,7 @@ export default function App() {
 
       const res = await fetch(API_URL, {
         method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" }, // для Apps Script часто надёжнее text/plain
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify(payload),
       });
 
@@ -177,6 +192,8 @@ export default function App() {
       setCart({});
       setAddress("");
       setComment("");
+      setCustomerName("");
+      setPhone("");
       setTab("catalog");
     } catch (e: any) {
       alert(`Не удалось отправить заказ: ${e?.message || "Ошибка"}`);
@@ -185,7 +202,6 @@ export default function App() {
     }
   }
 
-  // ===== UI =====
   return (
     <div style={styles.page}>
       <div style={styles.header}>
@@ -215,7 +231,6 @@ export default function App() {
         <>
           {tab === "catalog" && (
             <>
-              {/* Категории */}
               <div style={styles.chipsRow}>
                 {categories.map((c) => (
                   <button
@@ -229,26 +244,46 @@ export default function App() {
               </div>
 
               <div style={styles.list}>
-                {filteredProducts.map((p) => (
-                  <div key={p.id} style={styles.card}>
-                    {p.image ? (
-                      <img src={p.image} alt={p.name} style={styles.cardImg} />
-                    ) : (
-                      <div style={styles.cardImgPlaceholder}>Нет фото</div>
-                    )}
+                {filteredProducts.map((p) => {
+                  const q = qtyOf(p.id);
 
-                    <div style={styles.cardBody}>
-                      <div style={styles.cardName}>{p.name}</div>
-                      <div style={styles.cardMeta}>
-                        {money(p.price)} ₽ / {p.unit}
+                  return (
+                    <div key={p.id} style={styles.card}>
+                      {p.image ? (
+                        <img src={p.image} alt={p.name} style={styles.cardImg} />
+                      ) : (
+                        <div style={styles.cardImgPlaceholder}>Нет фото</div>
+                      )}
+
+                      <div style={styles.cardBody}>
+                        <div style={styles.cardName}>{p.name}</div>
+
+                        {p.description ? <div style={styles.cardDesc}>{p.description}</div> : null}
+
+                        <div style={styles.cardMeta}>
+                          {money(p.price)} ₽ / {p.unit}
+                        </div>
+
+                        {/* Вместо "В корзину" — счетчик */}
+                        {q === 0 ? (
+                          <button style={styles.buyBtn} onClick={() => addToCart(p)}>
+                            В корзину
+                          </button>
+                        ) : (
+                          <div style={styles.qtyInline}>
+                            <button style={styles.qtyBtn} onClick={() => setQty(p.id, q - 1)}>
+                              −
+                            </button>
+                            <div style={styles.qtyNum}>{q}</div>
+                            <button style={styles.qtyBtn} onClick={() => setQty(p.id, q + 1)}>
+                              +
+                            </button>
+                          </div>
+                        )}
                       </div>
-
-                      <button style={styles.buyBtn} onClick={() => addToCart(p)}>
-                        В корзину
-                      </button>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </>
           )}
@@ -304,13 +339,33 @@ export default function App() {
               <div style={styles.h2}>Оформление</div>
 
               <label style={styles.label}>
+                Имя <span style={{ color: "#b00020" }}>*</span>
+              </label>
+              <input
+                style={styles.input}
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                placeholder="Как к вам обращаться?"
+              />
+
+              <label style={styles.label}>
+                Телефон <span style={{ color: "#b00020" }}>*</span>
+              </label>
+              <input
+                style={styles.input}
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+7..."
+              />
+
+              <label style={styles.label}>
                 Адрес доставки <span style={{ color: "#b00020" }}>*</span>
               </label>
               <input
                 style={styles.input}
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
-                placeholder="Например: улица, дом, подъезд, этаж, кв."
+                placeholder="улица, дом, подъезд, этаж, кв."
               />
 
               <label style={styles.label}>Комментарий (необязательно)</label>
@@ -318,7 +373,7 @@ export default function App() {
                 style={styles.input}
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
-                placeholder="Например: код домофона, удобное время"
+                placeholder="код домофона, удобное время"
               />
 
               <div style={styles.totalRow}>
@@ -400,7 +455,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
   cardBody: { padding: 12, display: "flex", flexDirection: "column", gap: 8 },
   cardName: { fontSize: 18, fontWeight: 900, lineHeight: 1.15 },
+  cardDesc: { fontSize: 13, color: "#333", lineHeight: 1.25 },
   cardMeta: { color: "#222", fontWeight: 700 },
+
   buyBtn: {
     marginTop: 4,
     background: "#1f7a1f",
@@ -412,6 +469,8 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     width: "fit-content",
   },
+
+  qtyInline: { display: "flex", alignItems: "center", gap: 8, marginTop: 4 },
 
   panel: {
     background: "#fff",
@@ -440,13 +499,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   qtyNum: { minWidth: 24, textAlign: "center", fontWeight: 900 },
   cartSum: { width: 90, textAlign: "right", fontWeight: 900 },
-  removeBtn: {
-    border: 0,
-    background: "transparent",
-    fontSize: 18,
-    cursor: "pointer",
-    padding: 6,
-  },
+  removeBtn: { border: 0, background: "transparent", fontSize: 18, cursor: "pointer", padding: 6 },
 
   totalRow: {
     display: "flex",
