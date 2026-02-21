@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { API_URL } from "./config";
 
 type Product = {
   id: string;
@@ -7,214 +8,199 @@ type Product = {
   unit: string;
   price: number;
   sort: number;
-  image?: string;
+  image?: string; // например: "/images/milk.jpg"
 };
 
 type CartItem = {
-  id: string;
-  name: string;
-  unit: string;
-  price: number;
+  product: Product;
   qty: number;
 };
 
-function rub(n: number) {
-  return new Intl.NumberFormat("ru-RU").format(Math.round(n)) + " ₽";
+type TgUser = {
+  id?: number;
+  username?: string;
+  first_name?: string;
+  last_name?: string;
+};
+
+function getTgUser(): TgUser | null {
+  const w = window as any;
+  const tg = w?.Telegram?.WebApp;
+  const u = tg?.initDataUnsafe?.user;
+  return u || null;
 }
 
-function getTelegramUserLocal() {
-  try {
-    const tg = (window as any).Telegram?.WebApp;
-    const u = tg?.initDataUnsafe?.user;
-    if (!u) return {};
-    return {
-      id: u.id,
-      username: u.username,
-      first_name: u.first_name,
-      last_name: u.last_name,
-      language_code: u.language_code,
-    };
-  } catch {
-    return {};
-  }
-}
-
-function isTelegramWebAppLocal() {
-  return typeof (window as any).Telegram?.WebApp !== "undefined";
+function money(n: number) {
+  return new Intl.NumberFormat("ru-RU").format(Math.round(n));
 }
 
 export default function App() {
-  const [products, setProducts] = useState<Product[]>([]);
+  // === ВАЖНО: токен должен совпадать с API_TOKEN в Apps Script ===
+  const API_TOKEN = "Kjhytccb18@";
+
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string>("");
+  const [products, setProducts] = useState<Product[]>([]);
+  const [activeCategory, setActiveCategory] = useState<string>("Все");
 
-  const [tab, setTab] = useState<"products" | "cart" | "checkout">("products");
-
+  const [tab, setTab] = useState<"catalog" | "cart" | "checkout">("catalog");
   const [cart, setCart] = useState<Record<string, CartItem>>({});
-  const cartCount = useMemo(
-    () => Object.values(cart).reduce((s, it) => s + it.qty, 0),
-    [cart]
-  );
-  const total = useMemo(
-    () => Object.values(cart).reduce((s, it) => s + it.qty * it.price, 0),
-    [cart]
-  );
 
   const [address, setAddress] = useState("");
   const [comment, setComment] = useState("");
   const [sending, setSending] = useState(false);
 
+  // Telegram expand / theme
   useEffect(() => {
-    if (isTelegramWebAppLocal()) {
-      const tg = (window as any).Telegram?.WebApp;
-      tg?.ready?.();
-      tg?.expand?.();
+    const w = window as any;
+    const tg = w?.Telegram?.WebApp;
+    if (tg) {
+      try {
+        tg.ready();
+        tg.expand();
+      } catch {}
     }
   }, []);
 
+  // Load products
   useEffect(() => {
     (async () => {
       try {
         setLoading(true);
-        const res = await fetch(`/api/products`, {
-          method: "GET",
-          headers: { Accept: "application/json" },
-        });
+        setError("");
+
+        const url = `${API_URL}?action=products&ts=${Date.now()}`;
+        const res = await fetch(url, { method: "GET" });
         const data = await res.json();
-        setProducts(Array.isArray(data.products) ? data.products : []);
-      } catch (e) {
-        console.error(e);
-        alert("Не удалось загрузить товары");
+
+        if (data?.error) throw new Error(data.error);
+
+        // Если хочешь фото — можно прописывать их здесь по id
+        // либо добавить отдельную колонку image в Google Sheet и возвращать её из Apps Script
+        const withImages: Product[] = (data.products || []).map((p: Product) => {
+          // пример: если файл лежит public/images/milk.jpg
+          if (p.id === "P001") return { ...p, image: "/images/milk.jpg" };
+          return p;
+        });
+
+        setProducts(withImages);
+      } catch (e: any) {
+        setError(e?.message || "Ошибка загрузки товаров");
       } finally {
         setLoading(false);
       }
     })();
   }, []);
 
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    products.forEach((p) => set.add(p.category));
+    return ["Все", ...Array.from(set)];
+  }, [products]);
+
+  const filteredProducts = useMemo(() => {
+    if (activeCategory === "Все") return products;
+    return products.filter((p) => p.category === activeCategory);
+  }, [products, activeCategory]);
+
+  const cartItems = useMemo(() => Object.values(cart), [cart]);
+
+  const cartCount = useMemo(() => {
+    return cartItems.reduce((s, it) => s + it.qty, 0);
+  }, [cartItems]);
+
+  const total = useMemo(() => {
+    return cartItems.reduce((s, it) => s + it.qty * it.product.price, 0);
+  }, [cartItems]);
+
   function addToCart(p: Product) {
     setCart((prev) => {
       const next = { ...prev };
-      const existing = next[p.id];
-      next[p.id] = existing
-        ? { ...existing, qty: existing.qty + 1 }
-        : { id: p.id, name: p.name, unit: p.unit, price: p.price, qty: 1 };
+      const cur = next[p.id];
+      next[p.id] = { product: p, qty: (cur?.qty || 0) + 1 };
       return next;
     });
   }
 
-  function inc(id: string) {
-    setCart((prev) => {
-      const it = prev[id];
-      if (!it) return prev;
-      return { ...prev, [id]: { ...it, qty: it.qty + 1 } };
-    });
-  }
-
-  function dec(id: string) {
-    setCart((prev) => {
-      const it = prev[id];
-      if (!it) return prev;
-      const next = { ...prev };
-      if (it.qty <= 1) delete next[id];
-      else next[id] = { ...it, qty: it.qty - 1 };
-      return next;
-    });
-  }
-
-  function remove(id: string) {
+  function setQty(productId: string, qty: number) {
     setCart((prev) => {
       const next = { ...prev };
-      delete next[id];
+      if (qty <= 0) delete next[productId];
+      else next[productId] = { ...next[productId], qty };
       return next;
     });
   }
 
   async function submitOrder() {
-    try {
-      if (address.trim().length < 5) {
-        alert("Введите адрес доставки");
-        return;
-      }
-      if (cartCount === 0) {
-        alert("Корзина пустая");
-        return;
-      }
+    if (address.trim().length < 5) {
+      alert("Укажи адрес доставки (минимум 5 символов).");
+      return;
+    }
+    if (cartItems.length === 0) {
+      alert("Корзина пустая.");
+      return;
+    }
 
+    const tg = getTgUser();
+
+    const payload = {
+      token: API_TOKEN,
+      tg: tg || {},
+      address: address.trim(),
+      comment: comment.trim(),
+      items: cartItems.map((it) => ({
+        id: it.product.id,
+        name: it.product.name,
+        unit: it.product.unit,
+        price: it.product.price,
+        qty: it.qty,
+        sum: it.qty * it.product.price,
+      })),
+      total,
+    };
+
+    try {
       setSending(true);
 
-      const tgUser = getTelegramUserLocal();
-
-      const items = Object.values(cart).map((it) => ({
-        id: it.id,
-        name: it.name,
-        unit: it.unit,
-        price: it.price,
-        qty: it.qty,
-        sum: it.price * it.qty,
-      }));
-
-      const payload = {
-        tg: tgUser,
-        address: address.trim(),
-        comment: comment.trim(),
-        items,
-        total,
-      };
-
-      const res = await fetch(`/api/order`, {
+      const res = await fetch(API_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        headers: { "Content-Type": "text/plain;charset=utf-8" }, // для Apps Script часто надёжнее text/plain
         body: JSON.stringify(payload),
       });
 
       const data = await res.json().catch(() => ({}));
 
-      if (!res.ok || !data?.ok) {
-        const msg = data?.error ? String(data.error) : `HTTP ${res.status}`;
-        throw new Error(msg);
-      }
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      if (data?.error) throw new Error(data.error);
 
-      alert("Заказ отправлен!");
-
+      alert("✅ Заказ отправлен! Мы свяжемся с вами для подтверждения.");
       setCart({});
       setAddress("");
       setComment("");
-      setTab("products");
+      setTab("catalog");
     } catch (e: any) {
-      console.error(e);
-      alert(`Не удалось отправить заказ: ${e?.message || e}`);
+      alert(`Не удалось отправить заказ: ${e?.message || "Ошибка"}`);
     } finally {
       setSending(false);
     }
   }
 
-  const categories = useMemo(() => {
-    const map = new Map<string, Product[]>();
-    for (const p of products) {
-      const c = p.category || "Другое";
-      if (!map.has(c)) map.set(c, []);
-      map.get(c)!.push(p);
-    }
-    return Array.from(map.entries()).map(([name, list]) => ({
-      name,
-      list: list
-        .slice()
-        .sort((a, b) => (a.sort - b.sort) || a.name.localeCompare(b.name)),
-    }));
-  }, [products]);
-
+  // ===== UI =====
   return (
     <div style={styles.page}>
-      <div style={styles.headerRow}>
-        <h1 style={styles.h1}>Каталог</h1>
+      <div style={styles.header}>
+        <div style={styles.title}>Каталог</div>
+
         <div style={styles.tabs}>
           <button
-            style={{ ...styles.tabBtn, ...(tab === "products" ? styles.tabBtnActive : {}) }}
-            onClick={() => setTab("products")}
+            style={{ ...styles.tabBtn, ...(tab === "catalog" ? styles.tabActive : {}) }}
+            onClick={() => setTab("catalog")}
           >
             Товары
           </button>
+
           <button
-            style={{ ...styles.tabBtn, ...(tab !== "products" ? styles.tabBtnActive : {}) }}
+            style={{ ...styles.tabBtn, ...(tab === "cart" || tab === "checkout" ? styles.tabActive : {}) }}
             onClick={() => setTab("cart")}
           >
             🛒 Корзина ({cartCount})
@@ -222,140 +208,138 @@ export default function App() {
         </div>
       </div>
 
-      {loading && <div style={styles.muted}>Загрузка…</div>}
+      {loading && <div style={styles.info}>Загрузка…</div>}
+      {error && <div style={{ ...styles.info, color: "#b00020" }}>{error}</div>}
 
-      {!loading && tab === "products" && (
-        <div style={{ display: "grid", gap: 14 }}>
-          {categories.map((c) => (
-            <div key={c.name}>
-              <div style={styles.catTitle}>{c.name}</div>
-              <div style={{ display: "grid", gap: 12 }}>
-                {c.list.map((p) => (
+      {!loading && !error && (
+        <>
+          {tab === "catalog" && (
+            <>
+              {/* Категории */}
+              <div style={styles.chipsRow}>
+                {categories.map((c) => (
+                  <button
+                    key={c}
+                    style={{ ...styles.chip, ...(activeCategory === c ? styles.chipActive : {}) }}
+                    onClick={() => setActiveCategory(c)}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+
+              <div style={styles.list}>
+                {filteredProducts.map((p) => (
                   <div key={p.id} style={styles.card}>
                     {p.image ? (
-                      <img
-                        src={p.image}
-                        alt={p.name}
-                        style={styles.cardImg}
-                        onError={(ev) => {
-                          (ev.currentTarget as HTMLImageElement).style.display = "none";
-                        }}
-                      />
-                    ) : null}
+                      <img src={p.image} alt={p.name} style={styles.cardImg} />
+                    ) : (
+                      <div style={styles.cardImgPlaceholder}>Нет фото</div>
+                    )}
 
-                    <div style={{ display: "grid", gap: 8 }}>
-                      <div style={styles.cardTitle}>{p.name}</div>
-                      <div style={styles.cardSub}>
-                        {rub(p.price)} / {p.unit}
+                    <div style={styles.cardBody}>
+                      <div style={styles.cardName}>{p.name}</div>
+                      <div style={styles.cardMeta}>
+                        {money(p.price)} ₽ / {p.unit}
                       </div>
 
-                      <button style={styles.primaryBtn} onClick={() => addToCart(p)}>
+                      <button style={styles.buyBtn} onClick={() => addToCart(p)}>
                         В корзину
                       </button>
                     </div>
                   </div>
                 ))}
               </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {!loading && tab === "cart" && (
-        <div style={{ display: "grid", gap: 12 }}>
-          {cartCount === 0 ? (
-            <div style={styles.muted}>Корзина пустая</div>
-          ) : (
-            <>
-              <div style={{ display: "grid", gap: 10 }}>
-                {Object.values(cart).map((it) => (
-                  <div key={it.id} style={styles.cartRow}>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={styles.cartName}>{it.name}</div>
-                      <div style={styles.muted}>
-                        {rub(it.price)} / {it.unit}
-                      </div>
-                    </div>
-
-                    <div style={styles.qty}>
-                      <button style={styles.qtyBtn} onClick={() => dec(it.id)}>
-                        −
-                      </button>
-                      <div style={styles.qtyVal}>{it.qty}</div>
-                      <button style={styles.qtyBtn} onClick={() => inc(it.id)}>
-                        +
-                      </button>
-                    </div>
-
-                    <div style={styles.cartSum}>{rub(it.qty * it.price)}</div>
-
-                    <button style={styles.linkBtn} onClick={() => remove(it.id)}>
-                      ✕
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              <div style={styles.totalRow}>
-                <div style={{ fontWeight: 800 }}>Итого</div>
-                <div style={{ fontWeight: 800 }}>{rub(total)}</div>
-              </div>
-
-              <button style={styles.primaryBtn} onClick={() => setTab("checkout")}>
-                Оформить заказ
-              </button>
-
-              <button style={styles.ghostBtn} onClick={() => setTab("products")}>
-                Назад к товарам
-              </button>
             </>
           )}
-        </div>
-      )}
 
-      {!loading && tab === "checkout" && (
-        <div style={{ display: "grid", gap: 12 }}>
-          <div style={styles.checkoutCard}>
-            <div style={styles.checkoutTitle}>Оформление</div>
+          {tab === "cart" && (
+            <div style={styles.panel}>
+              {cartItems.length === 0 ? (
+                <div style={styles.info}>Корзина пустая</div>
+              ) : (
+                <>
+                  {cartItems.map((it) => (
+                    <div key={it.product.id} style={styles.cartRow}>
+                      <div style={{ flex: 1 }}>
+                        <div style={styles.cartName}>{it.product.name}</div>
+                        <div style={styles.cartMeta}>
+                          {money(it.product.price)} ₽ / {it.product.unit}
+                        </div>
+                      </div>
 
-            <label style={styles.label}>
-              Адрес доставки <span style={{ color: "#c33" }}>*</span>
+                      <div style={styles.qtyBox}>
+                        <button style={styles.qtyBtn} onClick={() => setQty(it.product.id, it.qty - 1)}>
+                          −
+                        </button>
+                        <div style={styles.qtyNum}>{it.qty}</div>
+                        <button style={styles.qtyBtn} onClick={() => setQty(it.product.id, it.qty + 1)}>
+                          +
+                        </button>
+                      </div>
+
+                      <div style={styles.cartSum}>{money(it.qty * it.product.price)} ₽</div>
+
+                      <button style={styles.removeBtn} onClick={() => setQty(it.product.id, 0)}>
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+
+                  <div style={styles.totalRow}>
+                    <div>Итого</div>
+                    <div style={{ fontWeight: 800 }}>{money(total)} ₽</div>
+                  </div>
+
+                  <button style={styles.primaryBtn} onClick={() => setTab("checkout")}>
+                    Оформить
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+
+          {tab === "checkout" && (
+            <div style={styles.panel}>
+              <div style={styles.h2}>Оформление</div>
+
+              <label style={styles.label}>
+                Адрес доставки <span style={{ color: "#b00020" }}>*</span>
+              </label>
               <input
                 style={styles.input}
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
-                placeholder="Например: ул. Ленина 10, кв 20"
+                placeholder="Например: улица, дом, подъезд, этаж, кв."
               />
-            </label>
 
-            <label style={styles.label}>
-              Комментарий (необязательно)
+              <label style={styles.label}>Комментарий (необязательно)</label>
               <input
                 style={styles.input}
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
                 placeholder="Например: код домофона, удобное время"
               />
-            </label>
 
-            <div style={styles.totalRow}>
-              <div style={{ fontWeight: 800 }}>Итого</div>
-              <div style={{ fontWeight: 800 }}>{rub(total)}</div>
+              <div style={styles.totalRow}>
+                <div>Итого</div>
+                <div style={{ fontWeight: 800 }}>{money(total)} ₽</div>
+              </div>
+
+              <button style={styles.primaryBtn} onClick={submitOrder} disabled={sending}>
+                {sending ? "Отправляем..." : "Подтвердить заказ"}
+              </button>
+
+              <button style={styles.secondaryBtn} onClick={() => setTab("cart")} disabled={sending}>
+                Назад в корзину
+              </button>
+
+              <div style={styles.note}>
+                Оплата пока не принимается в приложении — мы свяжемся после оформления.
+              </div>
             </div>
-
-            <button style={styles.primaryBtn} onClick={submitOrder} disabled={sending}>
-              {sending ? "Отправляем…" : "Подтвердить заказ"}
-            </button>
-
-            <button style={styles.ghostBtn} onClick={() => setTab("cart")} disabled={sending}>
-              Назад в корзину
-            </button>
-
-            <div style={styles.help}>
-              Оплата пока не принимается в приложении — мы свяжемся после оформления.
-            </div>
-          </div>
-        </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -363,139 +347,148 @@ export default function App() {
 
 const styles: Record<string, React.CSSProperties> = {
   page: {
+    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
     padding: 16,
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-    background: "#f4f6f5",
+    background: "#f2f3f5",
     minHeight: "100vh",
-    color: "#111",
   },
-  headerRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-    justifyContent: "space-between",
-    marginBottom: 10,
-  },
-  h1: { margin: 0, fontSize: 34, fontWeight: 900 },
+  header: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 },
+  title: { fontSize: 34, fontWeight: 900, letterSpacing: -0.5 },
   tabs: { display: "flex", gap: 8 },
   tabBtn: {
+    border: "1px solid #d0d0d0",
+    background: "#fff",
     padding: "10px 12px",
     borderRadius: 10,
-    border: "1px solid #d7dedb",
-    background: "#fff",
-    cursor: "pointer",
     fontWeight: 700,
+    cursor: "pointer",
   },
-  tabBtnActive: { background: "#e7efe9" },
+  tabActive: { background: "#e6f2e6", borderColor: "#7ab37a" },
 
-  catTitle: {
-    margin: "12px 0 10px",
-    fontSize: 18,
-    fontWeight: 900,
+  chipsRow: { display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8, marginBottom: 10 },
+  chip: {
+    border: "1px solid #d0d0d0",
+    background: "#fff",
+    padding: "8px 10px",
+    borderRadius: 999,
+    fontWeight: 700,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
   },
+  chipActive: { background: "#1f7a1f", color: "#fff", borderColor: "#1f7a1f" },
 
+  info: { padding: 12 },
+  list: { display: "grid", gap: 12 },
   card: {
     background: "#fff",
     borderRadius: 14,
-    border: "1px solid #e6ece9",
-    boxShadow: "0 1px 8px rgba(0,0,0,0.04)",
-    padding: 14,
-    display: "grid",
-    gap: 10,
-  },
-  cardImg: {
-    width: "100%",
-    height: 160,
-    objectFit: "cover",
-    borderRadius: 12,
-    border: "1px solid #eef2ef",
-  },
-  cardTitle: { fontSize: 18, fontWeight: 900 },
-  cardSub: { fontSize: 14, color: "#333" },
-
-  primaryBtn: {
-    background: "#2e7d32",
-    color: "#fff",
-    border: "none",
-    borderRadius: 10,
-    padding: "10px 12px",
-    fontWeight: 800,
-    cursor: "pointer",
-  },
-  ghostBtn: {
-    background: "#fff",
-    color: "#111",
-    border: "1px solid #d7dedb",
-    borderRadius: 10,
-    padding: "10px 12px",
-    fontWeight: 800,
-    cursor: "pointer",
-  },
-  linkBtn: {
-    background: "transparent",
-    border: "none",
-    cursor: "pointer",
-    fontSize: 18,
-  },
-
-  cartRow: {
-    display: "grid",
-    gridTemplateColumns: "1fr auto auto auto",
-    gap: 10,
-    alignItems: "center",
-    background: "#fff",
-    border: "1px solid #e6ece9",
-    borderRadius: 12,
-    padding: 12,
-  },
-  cartName: {
-    fontWeight: 900,
-    fontSize: 15,
     overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
+    boxShadow: "0 1px 10px rgba(0,0,0,0.06)",
+    display: "grid",
+    gridTemplateColumns: "120px 1fr",
   },
-  cartSum: { fontWeight: 900, minWidth: 90, textAlign: "right" },
+  cardImg: { width: 120, height: 120, objectFit: "cover", display: "block" },
+  cardImgPlaceholder: {
+    width: 120,
+    height: 120,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "#e9eaec",
+    color: "#666",
+    fontWeight: 700,
+  },
+  cardBody: { padding: 12, display: "flex", flexDirection: "column", gap: 8 },
+  cardName: { fontSize: 18, fontWeight: 900, lineHeight: 1.15 },
+  cardMeta: { color: "#222", fontWeight: 700 },
+  buyBtn: {
+    marginTop: 4,
+    background: "#1f7a1f",
+    color: "#fff",
+    border: 0,
+    borderRadius: 10,
+    padding: "10px 12px",
+    fontWeight: 800,
+    cursor: "pointer",
+    width: "fit-content",
+  },
 
-  qty: { display: "flex", alignItems: "center", gap: 6 },
+  panel: {
+    background: "#fff",
+    borderRadius: 14,
+    padding: 14,
+    boxShadow: "0 1px 10px rgba(0,0,0,0.06)",
+  },
+  cartRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "10px 0",
+    borderBottom: "1px solid #eee",
+  },
+  cartName: { fontWeight: 900 },
+  cartMeta: { color: "#333", fontWeight: 700, fontSize: 13 },
+  qtyBox: { display: "flex", alignItems: "center", gap: 6 },
   qtyBtn: {
     width: 34,
     height: 34,
     borderRadius: 10,
-    border: "1px solid #d7dedb",
+    border: "1px solid #d0d0d0",
     background: "#fff",
+    fontSize: 18,
     cursor: "pointer",
-    fontWeight: 900,
   },
-  qtyVal: { minWidth: 24, textAlign: "center", fontWeight: 900 },
+  qtyNum: { minWidth: 24, textAlign: "center", fontWeight: 900 },
+  cartSum: { width: 90, textAlign: "right", fontWeight: 900 },
+  removeBtn: {
+    border: 0,
+    background: "transparent",
+    fontSize: 18,
+    cursor: "pointer",
+    padding: 6,
+  },
 
   totalRow: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    background: "#fff",
-    border: "1px solid #e6ece9",
-    borderRadius: 12,
-    padding: 12,
+    paddingTop: 12,
+    marginTop: 6,
+    fontSize: 16,
   },
 
-  checkoutCard: {
-    background: "#fff",
-    border: "1px solid #e6ece9",
-    borderRadius: 14,
-    padding: 14,
-    display: "grid",
-    gap: 10,
-  },
-  checkoutTitle: { fontSize: 18, fontWeight: 900 },
-  label: { display: "grid", gap: 6, fontWeight: 800 },
+  h2: { fontSize: 20, fontWeight: 900, marginBottom: 10 },
+  label: { display: "block", marginTop: 10, fontWeight: 800 },
   input: {
-    padding: "10px 12px",
+    width: "100%",
+    padding: "12px 12px",
     borderRadius: 10,
-    border: "1px solid #d7dedb",
+    border: "1px solid #d0d0d0",
+    marginTop: 6,
     fontSize: 14,
-    outline: "none",
   },
-  help: { fontSize: 12, color: "#444" },
-  muted: { color: "#555" },
+
+  primaryBtn: {
+    width: "100%",
+    marginTop: 12,
+    background: "#1f7a1f",
+    color: "#fff",
+    border: 0,
+    borderRadius: 12,
+    padding: "12px 14px",
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+  secondaryBtn: {
+    width: "100%",
+    marginTop: 10,
+    background: "#fff",
+    color: "#111",
+    border: "1px solid #d0d0d0",
+    borderRadius: 12,
+    padding: "12px 14px",
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+  note: { marginTop: 10, fontSize: 12, color: "#555" },
 };
