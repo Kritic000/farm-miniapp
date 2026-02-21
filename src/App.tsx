@@ -20,7 +20,12 @@ export default function App() {
           <div style={styles.info}>
             <h3>{product.name}</h3>
             <p>{product.price}</p>
-            <button style={styles.button}>В корзину</button>
+            <button
+  style={styles.button}
+  onClick={() => alert("Товар добавлен в корзину")}
+>
+  В корзину
+</button>
           </div>
         </div>
       ))}
@@ -62,4 +67,5 @@ const styles = {
     cursor: "pointer"
   }
 };
+
 
