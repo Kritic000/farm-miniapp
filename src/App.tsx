@@ -349,7 +349,6 @@ export default function App() {
         <div className="heroContent">
           <div className="heroTitleRow">
             <div className="heroTitle">Нашенское</div>
-            <div className="heroSub">@FarmShopingbot</div>
           </div>
 
           {/* Tabs pill */}
@@ -1062,4 +1061,5 @@ body{ margin:0; background: var(--bg); color: var(--text); font-family: system-u
   pointer-events:none;
 }
 `;
+
 
