@@ -609,7 +609,7 @@ const styles: Record<string, React.CSSProperties> & {
     minHeight: "100vh",
     // фон-картинка + вуаль
     backgroundImage:
-      "linear-gradient(rgba(255,255,255,0.35), rgba(255,255,255,0.60)), url('/images/bg-farm.png')",
+      "linear-gradient(rgba(255,255,255,0.30), rgba(255,255,255,0.55)), url('/images/bg-farm.png')",
     backgroundSize: "cover",
     backgroundPosition: "center top",
     backgroundRepeat: "no-repeat",
@@ -732,7 +732,7 @@ const styles: Record<string, React.CSSProperties> & {
   list: { display: "grid", gap: 12 },
 
   card: {
-    background: "rgba(255,255,255,0.72)",
+    background: "rgba(255,255,255,0.55)",
     borderRadius: 18,
     overflow: "hidden",
     boxShadow: "0 12px 26px rgba(38,70,83,0.16)",
@@ -945,4 +945,5 @@ const styles: Record<string, React.CSSProperties> & {
     WebkitBackdropFilter: "blur(10px)",
   },
 };
+
 
