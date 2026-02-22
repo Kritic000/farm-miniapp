@@ -44,6 +44,15 @@ type Order = {
   items: OrderItem[];
 };
 
+type Toast = { type: "error" | "success" | "info"; text: string } | null;
+
+const PRODUCTS_CACHE_KEY = "farm_products_cache_v1";
+const PRODUCTS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 минут
+const LAST_PHONE_KEY = "farm_last_phone_v1";
+
+const DELIVERY_FEE = 200;
+const FREE_DELIVERY_FROM = 2000;
+
 function getTgUser(): TgUser | null {
   const w = window as any;
   const tg = w?.Telegram?.WebApp;
@@ -82,14 +91,18 @@ function humanStatus(s: string) {
   return s || "—";
 }
 
-type Toast = { type: "error" | "success" | "info"; text: string } | null;
-
-const PRODUCTS_CACHE_KEY = "farm_products_cache_v1";
-const PRODUCTS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 минут
-const LAST_PHONE_KEY = "farm_last_phone_v1";
-
-const DELIVERY_FEE = 200;
-const FREE_DELIVERY_FROM = 2000;
+// нормализуем путь картинки из таблицы:
+// - "public/images/xxx.jpg" -> "/images/xxx.jpg"
+// - "/images/xxx.jpg" -> "/images/xxx.jpg"
+// - "images/xxx.jpg" -> "/images/xxx.jpg"
+function normalizeImagePath(img?: string): string | undefined {
+  const s = String(img || "").trim();
+  if (!s) return undefined;
+  if (s.startsWith("http://") || s.startsWith("https://")) return s;
+  if (s.startsWith("/")) return s;
+  if (s.startsWith("public/")) return "/" + s.replace(/^public\//, "");
+  return "/" + s;
+}
 
 function loadProductsCache(): { ts: number; products: Product[] } | null {
   try {
@@ -126,16 +139,6 @@ function saveLastPhone(phone: string) {
   } catch {}
 }
 
-// нормализуем путь картинки из таблицы
-function normalizeImagePath(img?: string): string | undefined {
-  const s = String(img || "").trim();
-  if (!s) return undefined;
-  if (s.startsWith("http://") || s.startsWith("https://")) return s;
-  if (s.startsWith("/")) return s;
-  if (s.startsWith("public/")) return "/" + s.replace(/^public\//, "");
-  return "/" + s;
-}
-
 // fetch с таймаутом (Apps Script может “просыпаться” долго)
 async function fetchWithTimeout(
   input: RequestInfo,
@@ -153,6 +156,7 @@ async function fetchWithTimeout(
 }
 
 export default function App() {
+  // === ВАЖНО: токен должен совпадать с API_TOKEN в Apps Script ===
   const API_TOKEN = "Kjhytccb18@";
 
   const [loading, setLoading] = useState(true);
@@ -200,13 +204,13 @@ export default function App() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  // сохраняем телефон
+  // сохраняем телефон (чтобы "Мои заказы" могли работать даже если tg id недоступен)
   useEffect(() => {
     const p = phone.trim();
     if (p.length >= 6) saveLastPhone(p);
   }, [phone]);
 
-  // Загрузка ассортимента: кэш → сеть
+  // Быстрая загрузка ассортимента: сначала кэш, потом сеть
   useEffect(() => {
     let cancelled = false;
 
@@ -221,12 +225,14 @@ export default function App() {
         setError("");
         setLoadingHint("");
 
+        // 1) показать кэш мгновенно
         if (hasFreshCache && cached) {
           setProducts(cached.products);
           setLoading(false);
           setLoadingHint("Обновляем ассортимент…");
         }
 
+        // 2) подтянуть с сервера
         const url = `${API_URL}?action=products&ts=${Date.now()}`;
         const res = await fetchWithTimeout(url, {
           method: "GET",
@@ -368,6 +374,7 @@ export default function App() {
     try {
       setSending(true);
 
+      // Важно: text/plain уменьшает шанс preflight/CORS проблем в Apps Script
       const res = await fetch(API_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
@@ -388,6 +395,7 @@ export default function App() {
       setAddress("");
       setComment("");
       setCustomerName("");
+      // телефон оставляем
       setTab("catalog");
     } catch (e: any) {
       setToast({
@@ -404,6 +412,7 @@ export default function App() {
     const tgUserId = tg?.id ? String(tg.id) : "";
     const phoneDigits = normalizePhone(phone);
 
+    // если нет ни tgUserId, ни телефона — не грузим
     if (!tgUserId && phoneDigits.length < 6) {
       setOrders([]);
       setOrdersError(
@@ -424,7 +433,10 @@ export default function App() {
         `&limit=30` +
         `&ts=${Date.now()}`;
 
-      const res = await fetchWithTimeout(url, { method: "GET", timeoutMs: 25000 });
+      const res = await fetchWithTimeout(url, {
+        method: "GET",
+        timeoutMs: 25000,
+      });
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
@@ -439,6 +451,7 @@ export default function App() {
     }
   }
 
+  // когда открыли вкладку orders — подгружаем
   useEffect(() => {
     if (tab !== "orders") return;
     loadMyOrders();
@@ -464,37 +477,38 @@ export default function App() {
       )}
 
       <div style={styles.container}>
-        {/* ===== Header (НОВЫЙ, аккуратный) ===== */}
+        {/* ===== HEADER (Вариант 2: 2 ряда) ===== */}
         <div style={styles.header}>
-          <div style={styles.headerLeft}>
+          {/* Row 1: Название + Корзина */}
+          <div style={styles.headerRow}>
             <div style={styles.title}>FarmShop</div>
-
             <button
               style={{
-                ...styles.bigTabBtn,
-                ...(tab === "catalog" ? styles.tabActive : {}),
-              }}
-              onClick={() => setTab("catalog")}
-            >
-              Товары
-            </button>
-          </div>
-
-          <div style={styles.headerRight}>
-            <button
-              style={{
-                ...styles.smallTabBtn,
-                ...(tab === "cart" || tab === "checkout" ? styles.tabActive : {}),
+                ...styles.navBtn,
+                ...(tab === "cart" || tab === "checkout" ? styles.navBtnActive : {}),
               }}
               onClick={() => setTab("cart")}
             >
               🛒 Корзина ({cartCount})
             </button>
+          </div>
+
+          {/* Row 2: Товары + Заказы */}
+          <div style={styles.headerRow}>
+            <button
+              style={{
+                ...styles.navBtn,
+                ...(tab === "catalog" ? styles.navBtnActive : {}),
+              }}
+              onClick={() => setTab("catalog")}
+            >
+              Товары
+            </button>
 
             <button
               style={{
-                ...styles.smallTabBtn,
-                ...(tab === "orders" ? styles.tabActive : {}),
+                ...styles.navBtn,
+                ...(tab === "orders" ? styles.navBtnActive : {}),
               }}
               onClick={() => setTab("orders")}
             >
@@ -504,12 +518,8 @@ export default function App() {
         </div>
 
         {loading && <div style={styles.info}>Загрузка ассортимента…</div>}
-        {!loading && loadingHint && (
-          <div style={styles.infoMuted}>{loadingHint}</div>
-        )}
-        {error && (
-          <div style={{ ...styles.info, color: styles.colors.danger }}>{error}</div>
-        )}
+        {!loading && loadingHint && <div style={styles.infoMuted}>{loadingHint}</div>}
+        {error && <div style={{ ...styles.info, color: styles.colors.danger }}>{error}</div>}
 
         {!loading && !error && (
           <>
@@ -544,8 +554,7 @@ export default function App() {
                             loading="lazy"
                             decoding="async"
                             onError={(e) => {
-                              (e.currentTarget as HTMLImageElement).style.display =
-                                "none";
+                              (e.currentTarget as HTMLImageElement).style.display = "none";
                             }}
                           />
                         ) : (
@@ -569,25 +578,16 @@ export default function App() {
                           </div>
 
                           {q === 0 ? (
-                            <button
-                              style={styles.buyBtn}
-                              onClick={() => addToCart(p)}
-                            >
+                            <button style={styles.buyBtn} onClick={() => addToCart(p)}>
                               В корзину
                             </button>
                           ) : (
                             <div style={styles.qtyInline}>
-                              <button
-                                style={styles.qtyBtn}
-                                onClick={() => setQty(p.id, q - 1)}
-                              >
+                              <button style={styles.qtyBtn} onClick={() => setQty(p.id, q - 1)}>
                                 −
                               </button>
                               <div style={styles.qtyNum}>{q}</div>
-                              <button
-                                style={styles.qtyBtn}
-                                onClick={() => setQty(p.id, q + 1)}
-                              >
+                              <button style={styles.qtyBtn} onClick={() => setQty(p.id, q + 1)}>
                                 +
                               </button>
                             </div>
@@ -616,29 +616,18 @@ export default function App() {
                         </div>
 
                         <div style={styles.qtyBox}>
-                          <button
-                            style={styles.qtyBtn}
-                            onClick={() => setQty(it.product.id, it.qty - 1)}
-                          >
+                          <button style={styles.qtyBtn} onClick={() => setQty(it.product.id, it.qty - 1)}>
                             −
                           </button>
                           <div style={styles.qtyNum}>{it.qty}</div>
-                          <button
-                            style={styles.qtyBtn}
-                            onClick={() => setQty(it.product.id, it.qty + 1)}
-                          >
+                          <button style={styles.qtyBtn} onClick={() => setQty(it.product.id, it.qty + 1)}>
                             +
                           </button>
                         </div>
 
-                        <div style={styles.cartSum}>
-                          {money(it.qty * it.product.price)} ₽
-                        </div>
+                        <div style={styles.cartSum}>{money(it.qty * it.product.price)} ₽</div>
 
-                        <button
-                          style={styles.removeBtn}
-                          onClick={() => setQty(it.product.id, 0)}
-                        >
+                        <button style={styles.removeBtn} onClick={() => setQty(it.product.id, 0)}>
                           ✕
                         </button>
                       </div>
@@ -656,28 +645,19 @@ export default function App() {
                           {delivery === 0 ? (
                             <span style={styles.freeTag}>бесплатно</span>
                           ) : (
-                            <span style={styles.mutedTag}>
-                              до {money(FREE_DELIVERY_FROM)} ₽
-                            </span>
+                            <span style={styles.mutedTag}>до {money(FREE_DELIVERY_FROM)} ₽</span>
                           )}
                         </div>
-                        <div style={{ fontWeight: 700 }}>
-                          {money(delivery)} ₽
-                        </div>
+                        <div style={{ fontWeight: 700 }}>{money(delivery)} ₽</div>
                       </div>
 
                       <div style={styles.totalRowBig}>
                         <div>Итого</div>
-                        <div style={{ fontWeight: 800 }}>
-                          {money(grandTotal)} ₽
-                        </div>
+                        <div style={{ fontWeight: 800 }}>{money(grandTotal)} ₽</div>
                       </div>
                     </div>
 
-                    <button
-                      style={styles.primaryBtn}
-                      onClick={() => setTab("checkout")}
-                    >
+                    <button style={styles.primaryBtn} onClick={() => setTab("checkout")}>
                       Оформить
                     </button>
                   </>
@@ -713,8 +693,7 @@ export default function App() {
                 />
 
                 <label style={styles.label}>
-                  Адрес доставки{" "}
-                  <span style={{ color: styles.colors.danger }}>*</span>
+                  Адрес доставки <span style={{ color: styles.colors.danger }}>*</span>
                 </label>
                 <input
                   style={styles.input}
@@ -744,21 +723,15 @@ export default function App() {
                       {delivery === 0 ? (
                         <span style={styles.freeTag}>бесплатно</span>
                       ) : (
-                        <span style={styles.mutedTag}>
-                          до {money(FREE_DELIVERY_FROM)} ₽
-                        </span>
+                        <span style={styles.mutedTag}>до {money(FREE_DELIVERY_FROM)} ₽</span>
                       )}
                     </div>
-                    <div style={{ fontWeight: 700 }}>
-                      {money(delivery)} ₽
-                    </div>
+                    <div style={{ fontWeight: 700 }}>{money(delivery)} ₽</div>
                   </div>
 
                   <div style={styles.totalRowBig}>
                     <div>Итого</div>
-                    <div style={{ fontWeight: 800 }}>
-                      {money(grandTotal)} ₽
-                    </div>
+                    <div style={{ fontWeight: 800 }}>{money(grandTotal)} ₽</div>
                   </div>
                 </div>
 
@@ -774,17 +747,12 @@ export default function App() {
                   {sending ? "Отправляем..." : "Подтвердить заказ"}
                 </button>
 
-                <button
-                  style={styles.secondaryBtn}
-                  onClick={() => setTab("cart")}
-                  disabled={sending}
-                >
+                <button style={styles.secondaryBtn} onClick={() => setTab("cart")} disabled={sending}>
                   Назад в корзину
                 </button>
 
                 <div style={styles.note}>
-                  Оплата пока не принимается в приложении — мы свяжемся после
-                  оформления.
+                  Оплата пока не принимается в приложении — мы свяжемся после оформления.
                 </div>
               </div>
             )}
@@ -804,19 +772,13 @@ export default function App() {
                 </div>
 
                 {ordersError ? (
-                  <div style={{ ...styles.info, color: styles.colors.danger }}>
-                    {ordersError}
-                  </div>
+                  <div style={{ ...styles.info, color: styles.colors.danger }}>{ordersError}</div>
                 ) : null}
 
-                {ordersLoading && !orders.length ? (
-                  <div style={styles.info}>Загружаем заказы…</div>
-                ) : null}
+                {ordersLoading && !orders.length ? <div style={styles.info}>Загружаем заказы…</div> : null}
 
                 {!ordersLoading && !ordersError && orders.length === 0 ? (
-                  <div style={styles.infoMuted}>
-                    Заказов пока нет. Оформи первый заказ — и он появится здесь.
-                  </div>
+                  <div style={styles.infoMuted}>Заказов пока нет. Оформи первый заказ — и он появится здесь.</div>
                 ) : null}
 
                 <div style={styles.ordersList}>
@@ -850,9 +812,7 @@ export default function App() {
                                 {it.name}
                               </div>
                               <div style={styles.orderItemQty}>×{it.qty}</div>
-                              <div style={styles.orderItemSum}>
-                                {money(it.sum)} ₽
-                              </div>
+                              <div style={styles.orderItemSum}>{money(it.sum)} ₽</div>
                             </div>
                           ))}
                         {Array.isArray(o.items) && o.items.length > 20 ? (
@@ -868,7 +828,7 @@ export default function App() {
         )}
       </div>
 
-      {/* плавающая корзина */}
+      {/* Плавающая корзина */}
       {tab === "catalog" && cartCount > 0 && (
         <button style={styles.floatingCart} onClick={() => setTab("cart")}>
           🛒 {cartCount} • {money(grandTotal)} ₽
@@ -958,41 +918,31 @@ const styles: Record<string, React.CSSProperties> & {
     color: "#264653",
   },
 
-  /* ===== Header layout (НОВЫЕ стили) ===== */
   header: {
     display: "grid",
-    gridTemplateColumns: "minmax(0, 1fr) auto",
     gap: 10,
-    alignItems: "center",
-    marginBottom: 10,
+    marginBottom: 12,
   },
-  headerLeft: {
+
+  headerRow: {
     display: "flex",
     alignItems: "center",
+    justifyContent: "space-between",
     gap: 10,
-    minWidth: 0,
-  },
-  headerRight: {
-    display: "grid",
-    gridAutoFlow: "row",
-    gap: 8,
-    alignItems: "stretch",
-    justifyItems: "end",
+    width: "100%",
+    boxSizing: "border-box",
   },
 
   title: {
     fontSize: 22,
-    fontWeight: 650,
+    fontWeight: 700,
     letterSpacing: -0.2,
     color: "#264653",
-    whiteSpace: "nowrap",
+    minWidth: 0,
   },
 
-  bigTabBtn: {
-    flex: 1,
-    minWidth: 120,
-    maxWidth: 220,
-    border: "1px solid rgba(42,157,143,0.30)",
+  navBtn: {
+    border: "1px solid rgba(38,70,83,0.18)",
     background: "rgba(255,255,255,0.78)",
     padding: "10px 14px",
     borderRadius: 999,
@@ -1002,26 +952,10 @@ const styles: Record<string, React.CSSProperties> & {
     color: "#264653",
     boxSizing: "border-box",
     whiteSpace: "nowrap",
-  },
-
-  smallTabBtn: {
-    width: 150,
     maxWidth: "100%",
-    border: "1px solid rgba(38,70,83,0.18)",
-    background: "rgba(255,255,255,0.78)",
-    padding: "9px 12px",
-    borderRadius: 999,
-    fontWeight: 600,
-    cursor: "pointer",
-    boxShadow: "0 6px 14px rgba(38,70,83,0.12)",
-    color: "#264653",
-    boxSizing: "border-box",
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
   },
 
-  tabActive: {
+  navBtnActive: {
     borderColor: "rgba(42,157,143,0.35)",
     background:
       "linear-gradient(180deg, rgba(42,157,143,0.98) 0%, rgba(38,70,83,0.98) 140%)",
@@ -1049,6 +983,7 @@ const styles: Record<string, React.CSSProperties> & {
     color: "#264653",
     boxSizing: "border-box",
   },
+
   chipActive: {
     background:
       "linear-gradient(180deg, rgba(42,157,143,0.98) 0%, rgba(38,70,83,0.98) 140%)",
@@ -1062,6 +997,7 @@ const styles: Record<string, React.CSSProperties> & {
 
   list: { display: "grid", gap: 12 },
 
+  // фиксируем одинаковую “геометрию” карточки/картинки для всех категорий
   card: {
     background: "rgba(255,255,255,0.55)",
     borderRadius: 18,
@@ -1101,7 +1037,6 @@ const styles: Record<string, React.CSSProperties> & {
     flexDirection: "column",
     gap: 6,
     boxSizing: "border-box",
-    minWidth: 0,
   },
 
   cardName: {
@@ -1165,6 +1100,7 @@ const styles: Record<string, React.CSSProperties> & {
     padding: "10px 0",
     borderBottom: "1px solid rgba(38,70,83,0.10)",
   },
+
   cartName: { fontWeight: 650, color: "#264653" },
   cartMeta: { color: "rgba(38,70,83,0.80)", fontWeight: 450, fontSize: 13 },
 
@@ -1181,6 +1117,7 @@ const styles: Record<string, React.CSSProperties> & {
     color: "#264653",
     boxSizing: "border-box",
   },
+
   qtyNum: {
     minWidth: 24,
     textAlign: "center",
@@ -1218,6 +1155,7 @@ const styles: Record<string, React.CSSProperties> & {
     color: "#264653",
     fontWeight: 550,
   },
+
   totalRowBig: {
     display: "flex",
     justifyContent: "space-between",
@@ -1240,6 +1178,7 @@ const styles: Record<string, React.CSSProperties> & {
     border: "1px solid rgba(233,196,106,0.65)",
     boxSizing: "border-box",
   },
+
   mutedTag: {
     marginLeft: 8,
     padding: "3px 8px",
