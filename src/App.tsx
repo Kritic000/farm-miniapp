@@ -353,7 +353,7 @@ export default function App() {
       <div style={styles.container}>
         {/* Минималистичная шапка */}
         <div style={styles.header}>
-          <div style={styles.title}>Нашенское</div>
+          <div style={styles.title}></div>
 
           <div style={styles.tabs}>
             <button
@@ -1072,3 +1072,4 @@ const styles: Record<string, React.CSSProperties> & {
     fontWeight: 700,
   },
 };
+
