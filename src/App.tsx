@@ -105,7 +105,10 @@ function loadProductsCache(): { ts: number; products: Product[] } | null {
 
 function saveProductsCache(products: Product[]) {
   try {
-    localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), products }));
+    localStorage.setItem(
+      PRODUCTS_CACHE_KEY,
+      JSON.stringify({ ts: Date.now(), products })
+    );
   } catch {}
 }
 
@@ -123,6 +126,7 @@ function saveLastPhone(phone: string) {
   } catch {}
 }
 
+// нормализуем путь картинки из таблицы
 function normalizeImagePath(img?: string): string | undefined {
   const s = String(img || "").trim();
   if (!s) return undefined;
@@ -132,7 +136,7 @@ function normalizeImagePath(img?: string): string | undefined {
   return "/" + s;
 }
 
-// fetch с таймаутом (Apps Script может “просыпаться” долго)
+// fetch с таймаутом
 async function fetchWithTimeout(
   input: RequestInfo,
   init: RequestInit & { timeoutMs?: number } = {}
@@ -158,7 +162,9 @@ export default function App() {
 
   const [products, setProducts] = useState<Product[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>("Все");
-  const [tab, setTab] = useState<"catalog" | "cart" | "checkout" | "orders">("catalog");
+  const [tab, setTab] = useState<"catalog" | "cart" | "checkout" | "orders">(
+    "catalog"
+  );
 
   const [cart, setCart] = useState<Record<string, CartItem>>({});
 
@@ -200,29 +206,32 @@ export default function App() {
     if (p.length >= 6) saveLastPhone(p);
   }, [phone]);
 
-  // Быстрая загрузка ассортимента: сначала кэш, потом сеть
+  // Загрузка ассортимента: кэш -> сеть
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
       const cached = loadProductsCache();
-      const hasFreshCache = !!(cached && Date.now() - cached.ts < PRODUCTS_CACHE_TTL_MS);
+      const hasFreshCache = !!(
+        cached && Date.now() - cached.ts < PRODUCTS_CACHE_TTL_MS
+      );
 
       try {
         setLoading(true);
         setError("");
         setLoadingHint("");
 
-        // 1) показать кэш мгновенно
         if (hasFreshCache && cached) {
           setProducts(cached.products);
           setLoading(false);
           setLoadingHint("Обновляем ассортимент…");
         }
 
-        // 2) подтянуть с сервера
         const url = `${API_URL}?action=products&ts=${Date.now()}`;
-        const res = await fetchWithTimeout(url, { method: "GET", timeoutMs: 25000 });
+        const res = await fetchWithTimeout(url, {
+          method: "GET",
+          timeoutMs: 25000,
+        });
         const data = await res.json();
 
         if (data?.error) throw new Error(data.error);
@@ -245,11 +254,14 @@ export default function App() {
         if (e?.name === "AbortError" && hasFreshCache) {
           setLoading(false);
           setError("");
-          setLoadingHint("Сервер отвечает медленно. Показан сохранённый ассортимент.");
+          setLoadingHint(
+            "Сервер отвечает медленно. Показан сохранённый ассортимент."
+          );
           return;
         }
 
-        if (e?.name === "AbortError") setError("Сервер долго отвечает. Попробуйте ещё раз.");
+        if (e?.name === "AbortError")
+          setError("Сервер долго отвечает. Попробуйте ещё раз.");
         else setError(e?.message || "Ошибка загрузки товаров");
 
         setLoading(false);
@@ -275,9 +287,15 @@ export default function App() {
 
   const cartItems = useMemo(() => Object.values(cart), [cart]);
 
-  const cartCount = useMemo(() => cartItems.reduce((s, it) => s + it.qty, 0), [cartItems]);
+  const cartCount = useMemo(
+    () => cartItems.reduce((s, it) => s + it.qty, 0),
+    [cartItems]
+  );
 
-  const total = useMemo(() => cartItems.reduce((s, it) => s + it.qty * it.product.price, 0), [cartItems]);
+  const total = useMemo(
+    () => cartItems.reduce((s, it) => s + it.qty * it.product.price, 0),
+    [cartItems]
+  );
 
   const delivery = useMemo(() => {
     if (total <= 0) return 0;
@@ -312,7 +330,8 @@ export default function App() {
   function validateCheckout(): string | null {
     if (customerName.trim().length < 2) return "Укажи имя (минимум 2 символа).";
     if (phone.trim().length < 6) return "Укажи телефон (минимум 6 символов).";
-    if (address.trim().length < 5) return "Укажи адрес доставки (минимум 5 символов).";
+    if (address.trim().length < 5)
+      return "Укажи адрес доставки (минимум 5 символов).";
     if (cartItems.length === 0) return "Корзина пустая.";
     return null;
   }
@@ -360,7 +379,10 @@ export default function App() {
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
       if (data?.error) throw new Error(data.error);
 
-      setToast({ type: "success", text: "✅ Заказ отправлен! Мы свяжемся для подтверждения." });
+      setToast({
+        type: "success",
+        text: "✅ Заказ отправлен! Мы свяжемся для подтверждения.",
+      });
 
       setCart({});
       setAddress("");
@@ -369,7 +391,10 @@ export default function App() {
       // телефон оставляем
       setTab("catalog");
     } catch (e: any) {
-      setToast({ type: "error", text: `Не удалось отправить заказ: ${e?.message || "Ошибка"}` });
+      setToast({
+        type: "error",
+        text: `Не удалось отправить заказ: ${e?.message || "Ошибка"}`,
+      });
     } finally {
       setSending(false);
     }
@@ -382,7 +407,9 @@ export default function App() {
 
     if (!tgUserId && phoneDigits.length < 6) {
       setOrders([]);
-      setOrdersError("Чтобы показать заказы, открой приложение из Telegram или укажи телефон (в оформлении).");
+      setOrdersError(
+        "Чтобы показать заказы, открой приложение из Telegram или укажи телефон (в оформлении)."
+      );
       return;
     }
 
@@ -430,7 +457,7 @@ export default function App() {
             ...(toast.type === "info" ? styles.toastInfo : {}),
           }}
         >
-          <div style={{ fontWeight: 700 }}>{toast.text}</div>
+          <div style={{ fontWeight: 650 }}>{toast.text}</div>
           <button style={styles.toastClose} onClick={() => setToast(null)}>
             ×
           </button>
@@ -438,15 +465,16 @@ export default function App() {
       )}
 
       <div style={styles.container}>
-        {/* ===== HEADER ===== */}
+        {/* header */}
         <div style={styles.header}>
           <div style={styles.title}>FarmShop</div>
 
-          <div style={styles.tabsGrid}>
+          {/* НОВАЯ ШАПКА: 1 большая слева + 2 маленьких справа */}
+          <div style={styles.tabsBar}>
             <button
               style={{
                 ...styles.bigTabBtn,
-                ...(tab === "catalog" ? styles.tabActive : {}),
+                ...(tab === "catalog" ? styles.tabActiveBig : {}),
               }}
               onClick={() => setTab("catalog")}
             >
@@ -457,7 +485,9 @@ export default function App() {
               <button
                 style={{
                   ...styles.smallTabBtn,
-                  ...(tab === "cart" || tab === "checkout" ? styles.tabActive : {}),
+                  ...(tab === "cart" || tab === "checkout"
+                    ? styles.tabActiveSmall
+                    : {}),
                 }}
                 onClick={() => setTab("cart")}
               >
@@ -467,7 +497,7 @@ export default function App() {
               <button
                 style={{
                   ...styles.smallTabBtn,
-                  ...(tab === "orders" ? styles.tabActive : {}),
+                  ...(tab === "orders" ? styles.tabActiveSmall : {}),
                 }}
                 onClick={() => setTab("orders")}
               >
@@ -477,10 +507,15 @@ export default function App() {
           </div>
         </div>
 
-        {/* ===== CONTENT ===== */}
         {loading && <div style={styles.info}>Загрузка ассортимента…</div>}
-        {!loading && loadingHint && <div style={styles.infoMuted}>{loadingHint}</div>}
-        {error && <div style={{ ...styles.info, color: styles.colors.danger }}>{error}</div>}
+        {!loading && loadingHint && (
+          <div style={styles.infoMuted}>{loadingHint}</div>
+        )}
+        {error && (
+          <div style={{ ...styles.info, color: styles.colors.danger }}>
+            {error}
+          </div>
+        )}
 
         {!loading && !error && (
           <>
@@ -490,7 +525,10 @@ export default function App() {
                   {categories.map((c) => (
                     <button
                       key={c}
-                      style={{ ...styles.chip, ...(activeCategory === c ? styles.chipActive : {}) }}
+                      style={{
+                        ...styles.chip,
+                        ...(activeCategory === c ? styles.chipActive : {}),
+                      }}
                       onClick={() => setActiveCategory(c)}
                     >
                       {c}
@@ -512,7 +550,8 @@ export default function App() {
                             loading="lazy"
                             decoding="async"
                             onError={(e) => {
-                              (e.currentTarget as HTMLImageElement).style.display = "none";
+                              (e.currentTarget as HTMLImageElement).style.display =
+                                "none";
                             }}
                           />
                         ) : (
@@ -536,16 +575,25 @@ export default function App() {
                           </div>
 
                           {q === 0 ? (
-                            <button style={styles.buyBtn} onClick={() => addToCart(p)}>
+                            <button
+                              style={styles.buyBtn}
+                              onClick={() => addToCart(p)}
+                            >
                               В корзину
                             </button>
                           ) : (
                             <div style={styles.qtyInline}>
-                              <button style={styles.qtyBtn} onClick={() => setQty(p.id, q - 1)}>
+                              <button
+                                style={styles.qtyBtn}
+                                onClick={() => setQty(p.id, q - 1)}
+                              >
                                 −
                               </button>
                               <div style={styles.qtyNum}>{q}</div>
-                              <button style={styles.qtyBtn} onClick={() => setQty(p.id, q + 1)}>
+                              <button
+                                style={styles.qtyBtn}
+                                onClick={() => setQty(p.id, q + 1)}
+                              >
                                 +
                               </button>
                             </div>
@@ -566,7 +614,7 @@ export default function App() {
                   <>
                     {cartItems.map((it) => (
                       <div key={it.product.id} style={styles.cartRow}>
-                        <div style={{ flex: 1 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={styles.cartName}>{it.product.name}</div>
                           <div style={styles.cartMeta}>
                             {money(it.product.price)} ₽ / {it.product.unit}
@@ -574,18 +622,29 @@ export default function App() {
                         </div>
 
                         <div style={styles.qtyBox}>
-                          <button style={styles.qtyBtn} onClick={() => setQty(it.product.id, it.qty - 1)}>
+                          <button
+                            style={styles.qtyBtn}
+                            onClick={() => setQty(it.product.id, it.qty - 1)}
+                          >
                             −
                           </button>
                           <div style={styles.qtyNum}>{it.qty}</div>
-                          <button style={styles.qtyBtn} onClick={() => setQty(it.product.id, it.qty + 1)}>
+                          <button
+                            style={styles.qtyBtn}
+                            onClick={() => setQty(it.product.id, it.qty + 1)}
+                          >
                             +
                           </button>
                         </div>
 
-                        <div style={styles.cartSum}>{money(it.qty * it.product.price)} ₽</div>
+                        <div style={styles.cartSum}>
+                          {money(it.qty * it.product.price)} ₽
+                        </div>
 
-                        <button style={styles.removeBtn} onClick={() => setQty(it.product.id, 0)}>
+                        <button
+                          style={styles.removeBtn}
+                          onClick={() => setQty(it.product.id, 0)}
+                        >
                           ✕
                         </button>
                       </div>
@@ -594,7 +653,7 @@ export default function App() {
                     <div style={styles.totalBlock}>
                       <div style={styles.totalRow}>
                         <div>Товары</div>
-                        <div style={{ fontWeight: 700 }}>{money(total)} ₽</div>
+                        <div style={{ fontWeight: 650 }}>{money(total)} ₽</div>
                       </div>
 
                       <div style={styles.totalRow}>
@@ -603,19 +662,26 @@ export default function App() {
                           {delivery === 0 ? (
                             <span style={styles.freeTag}>бесплатно</span>
                           ) : (
-                            <span style={styles.mutedTag}>до {money(FREE_DELIVERY_FROM)} ₽</span>
+                            <span style={styles.mutedTag}>
+                              до {money(FREE_DELIVERY_FROM)} ₽
+                            </span>
                           )}
                         </div>
-                        <div style={{ fontWeight: 700 }}>{money(delivery)} ₽</div>
+                        <div style={{ fontWeight: 650 }}>{money(delivery)} ₽</div>
                       </div>
 
                       <div style={styles.totalRowBig}>
                         <div>Итого</div>
-                        <div style={{ fontWeight: 800 }}>{money(grandTotal)} ₽</div>
+                        <div style={{ fontWeight: 750 }}>
+                          {money(grandTotal)} ₽
+                        </div>
                       </div>
                     </div>
 
-                    <button style={styles.primaryBtn} onClick={() => setTab("checkout")}>
+                    <button
+                      style={styles.primaryBtn}
+                      onClick={() => setTab("checkout")}
+                    >
                       Оформить
                     </button>
                   </>
@@ -651,7 +717,8 @@ export default function App() {
                 />
 
                 <label style={styles.label}>
-                  Адрес доставки <span style={{ color: styles.colors.danger }}>*</span>
+                  Адрес доставки{" "}
+                  <span style={{ color: styles.colors.danger }}>*</span>
                 </label>
                 <input
                   style={styles.input}
@@ -672,7 +739,7 @@ export default function App() {
                 <div style={styles.totalBlock}>
                   <div style={styles.totalRow}>
                     <div>Товары</div>
-                    <div style={{ fontWeight: 700 }}>{money(total)} ₽</div>
+                    <div style={{ fontWeight: 650 }}>{money(total)} ₽</div>
                   </div>
 
                   <div style={styles.totalRow}>
@@ -681,15 +748,19 @@ export default function App() {
                       {delivery === 0 ? (
                         <span style={styles.freeTag}>бесплатно</span>
                       ) : (
-                        <span style={styles.mutedTag}>до {money(FREE_DELIVERY_FROM)} ₽</span>
+                        <span style={styles.mutedTag}>
+                          до {money(FREE_DELIVERY_FROM)} ₽
+                        </span>
                       )}
                     </div>
-                    <div style={{ fontWeight: 700 }}>{money(delivery)} ₽</div>
+                    <div style={{ fontWeight: 650 }}>{money(delivery)} ₽</div>
                   </div>
 
                   <div style={styles.totalRowBig}>
                     <div>Итого</div>
-                    <div style={{ fontWeight: 800 }}>{money(grandTotal)} ₽</div>
+                    <div style={{ fontWeight: 750 }}>
+                      {money(grandTotal)} ₽
+                    </div>
                   </div>
                 </div>
 
@@ -705,12 +776,17 @@ export default function App() {
                   {sending ? "Отправляем..." : "Подтвердить заказ"}
                 </button>
 
-                <button style={styles.secondaryBtn} onClick={() => setTab("cart")} disabled={sending}>
+                <button
+                  style={styles.secondaryBtn}
+                  onClick={() => setTab("cart")}
+                  disabled={sending}
+                >
                   Назад в корзину
                 </button>
 
                 <div style={styles.note}>
-                  Оплата пока не принимается в приложении — мы свяжемся после оформления.
+                  Оплата пока не принимается в приложении — мы свяжемся после
+                  оформления.
                 </div>
               </div>
             )}
@@ -719,41 +795,62 @@ export default function App() {
               <div style={styles.panel}>
                 <div style={styles.ordersHeader}>
                   <div style={styles.h2}>Мои заказы</div>
-                  <button style={styles.refreshBtn} onClick={loadMyOrders} disabled={ordersLoading} title="Обновить">
+                  <button
+                    style={styles.refreshBtn}
+                    onClick={loadMyOrders}
+                    disabled={ordersLoading}
+                    title="Обновить"
+                  >
                     {ordersLoading ? "Обновляем…" : "↻"}
                   </button>
                 </div>
 
                 {ordersError ? (
-                  <div style={{ ...styles.info, color: styles.colors.danger }}>{ordersError}</div>
+                  <div style={{ ...styles.info, color: styles.colors.danger }}>
+                    {ordersError}
+                  </div>
                 ) : null}
 
-                {ordersLoading && !orders.length ? <div style={styles.info}>Загружаем заказы…</div> : null}
+                {ordersLoading && !orders.length ? (
+                  <div style={styles.info}>Загружаем заказы…</div>
+                ) : null}
 
                 {!ordersLoading && !ordersError && orders.length === 0 ? (
-                  <div style={styles.infoMuted}>Заказов пока нет. Оформи первый заказ — и он появится здесь.</div>
+                  <div style={styles.infoMuted}>
+                    Заказов пока нет. Оформи первый заказ — и он появится здесь.
+                  </div>
                 ) : null}
 
                 <div style={styles.ordersList}>
                   {orders.map((o, idx) => (
                     <div key={idx} style={styles.orderCard}>
                       <div style={styles.orderTop}>
-                        <div style={styles.orderDate}>{formatDate(o.createdAt)}</div>
-                        <div style={styles.orderStatus}>{humanStatus(o.status)}</div>
+                        <div style={styles.orderDate}>
+                          {formatDate(o.createdAt)}
+                        </div>
+                        <div style={styles.orderStatus}>
+                          {humanStatus(o.status)}
+                        </div>
                       </div>
 
                       <div style={styles.orderTotals}>
                         <div style={styles.orderRow}>
                           <div>Товары</div>
-                          <div style={{ fontWeight: 700 }}>{money(o.total)} ₽</div>
+                          <div style={{ fontWeight: 650 }}>
+                            {money(o.total)} ₽
+                          </div>
                         </div>
                         <div style={styles.orderRow}>
                           <div>Доставка</div>
-                          <div style={{ fontWeight: 700 }}>{money(o.delivery)} ₽</div>
+                          <div style={{ fontWeight: 650 }}>
+                            {money(o.delivery)} ₽
+                          </div>
                         </div>
                         <div style={styles.orderRowBig}>
                           <div>Итого</div>
-                          <div style={{ fontWeight: 800 }}>{money(o.grandTotal)} ₽</div>
+                          <div style={{ fontWeight: 750 }}>
+                            {money(o.grandTotal)} ₽
+                          </div>
                         </div>
                       </div>
 
@@ -765,11 +862,15 @@ export default function App() {
                                 {it.name}
                               </div>
                               <div style={styles.orderItemQty}>×{it.qty}</div>
-                              <div style={styles.orderItemSum}>{money(it.sum)} ₽</div>
+                              <div style={styles.orderItemSum}>
+                                {money(it.sum)} ₽
+                              </div>
                             </div>
                           ))}
                         {Array.isArray(o.items) && o.items.length > 20 ? (
-                          <div style={styles.infoMuted}>Показаны первые 20 позиций…</div>
+                          <div style={styles.infoMuted}>
+                            Показаны первые 20 позиций…
+                          </div>
                         ) : null}
                       </div>
                     </div>
@@ -884,55 +985,75 @@ const styles: Record<string, React.CSSProperties> & {
 
   title: {
     fontSize: 22,
-    fontWeight: 700,
+    fontWeight: 650,
     letterSpacing: -0.2,
     color: "#264653",
-    whiteSpace: "nowrap",
+    flex: "0 0 auto",
   },
 
-  // ====== NEW HEADER LAYOUT ======
-  tabsGrid: {
-    display: "grid",
-    gridTemplateColumns: "1fr auto",
-    gap: 10,
+  // ВАЖНО: minWidth:0 чтобы не вылезало
+  tabsBar: {
+    display: "flex",
     alignItems: "stretch",
-  },
-  rightTabs: {
-    display: "grid",
+    justifyContent: "flex-end",
     gap: 10,
-  },
-  bigTabBtn: {
-    border: "1px solid rgba(38,70,83,0.18)",
-    background: "rgba(255,255,255,0.78)",
-    padding: "12px 18px",
-    borderRadius: 999,
-    fontWeight: 650,
-    cursor: "pointer",
-    boxShadow: "0 6px 14px rgba(38,70,83,0.12)",
-    color: "#264653",
-    boxSizing: "border-box",
-    whiteSpace: "nowrap",
-    minHeight: 44,
-  },
-  smallTabBtn: {
-    border: "1px solid rgba(38,70,83,0.18)",
-    background: "rgba(255,255,255,0.78)",
-    padding: "10px 14px",
-    borderRadius: 999,
-    fontWeight: 650,
-    cursor: "pointer",
-    boxShadow: "0 6px 14px rgba(38,70,83,0.12)",
-    color: "#264653",
-    boxSizing: "border-box",
-    whiteSpace: "nowrap",
-    minHeight: 44,
+    flex: "1 1 auto",
+    minWidth: 0,
   },
 
-  tabActive: {
+  bigTabBtn: {
+    flex: "1 1 auto",
+    minWidth: 0,
+    border: "1px solid rgba(38,70,83,0.18)",
+    background: "rgba(255,255,255,0.78)",
+    padding: "12px 14px",
+    borderRadius: 16,
+    fontWeight: 650,
+    cursor: "pointer",
+    boxShadow: "0 6px 14px rgba(38,70,83,0.12)",
+    color: "#264653",
+    boxSizing: "border-box",
+    whiteSpace: "nowrap",
+  },
+
+  rightTabs: {
+    flex: "0 0 auto",
+    display: "grid",
+    gap: 8,
+    minWidth: 156,
+    maxWidth: 190,
+  },
+
+  smallTabBtn: {
+    width: "100%",
+    border: "1px solid rgba(38,70,83,0.18)",
+    background: "rgba(255,255,255,0.78)",
+    padding: "10px 12px",
+    borderRadius: 14,
+    fontWeight: 600,
+    cursor: "pointer",
+    boxShadow: "0 6px 14px rgba(38,70,83,0.10)",
+    color: "#264653",
+    boxSizing: "border-box",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
+
+  tabActiveBig: {
     borderColor: "rgba(42,157,143,0.35)",
-    background: "linear-gradient(180deg, rgba(42,157,143,0.98) 0%, rgba(38,70,83,0.98) 140%)",
+    background:
+      "linear-gradient(180deg, rgba(42,157,143,0.98) 0%, rgba(38,70,83,0.98) 140%)",
     color: "#ffffff",
     boxShadow: "0 10px 22px rgba(42,157,143,0.20)",
+  },
+
+  tabActiveSmall: {
+    borderColor: "rgba(42,157,143,0.35)",
+    background:
+      "linear-gradient(180deg, rgba(42,157,143,0.98) 0%, rgba(38,70,83,0.98) 140%)",
+    color: "#ffffff",
+    boxShadow: "0 10px 22px rgba(42,157,143,0.18)",
   },
 
   chipsRow: {
@@ -956,7 +1077,8 @@ const styles: Record<string, React.CSSProperties> & {
     boxSizing: "border-box",
   },
   chipActive: {
-    background: "linear-gradient(180deg, rgba(42,157,143,0.98) 0%, rgba(38,70,83,0.98) 140%)",
+    background:
+      "linear-gradient(180deg, rgba(42,157,143,0.98) 0%, rgba(38,70,83,0.98) 140%)",
     color: "#ffffff",
     borderColor: "rgba(42,157,143,0.35)",
     boxShadow: "0 10px 22px rgba(42,157,143,0.18)",
@@ -1006,6 +1128,7 @@ const styles: Record<string, React.CSSProperties> & {
     flexDirection: "column",
     gap: 6,
     boxSizing: "border-box",
+    minWidth: 0,
   },
 
   cardName: {
@@ -1032,12 +1155,14 @@ const styles: Record<string, React.CSSProperties> & {
   },
 
   cardMeta: { fontWeight: 550 },
+
   price: { color: "#2a9d8f", fontWeight: 700 },
   unit: { color: "rgba(38,70,83,0.85)", fontWeight: 500 },
 
   buyBtn: {
     marginTop: 4,
-    background: "linear-gradient(180deg, rgba(42,157,143,1) 0%, rgba(38,70,83,1) 140%)",
+    background:
+      "linear-gradient(180deg, rgba(42,157,143,1) 0%, rgba(38,70,83,1) 140%)",
     color: "#fff",
     border: "1px solid rgba(255,255,255,0.22)",
     borderRadius: 14,
@@ -1181,7 +1306,8 @@ const styles: Record<string, React.CSSProperties> & {
   primaryBtn: {
     width: "100%",
     marginTop: 12,
-    background: "linear-gradient(180deg, rgba(42,157,143,1) 0%, rgba(38,70,83,1) 140%)",
+    background:
+      "linear-gradient(180deg, rgba(42,157,143,1) 0%, rgba(38,70,83,1) 140%)",
     color: "#fff",
     border: "1px solid rgba(255,255,255,0.22)",
     borderRadius: 16,
@@ -1223,7 +1349,8 @@ const styles: Record<string, React.CSSProperties> & {
     width: "calc(100% - 32px)",
     boxSizing: "border-box",
     border: "1px solid rgba(38,70,83,0.16)",
-    background: "linear-gradient(180deg, rgba(233,196,106,0.92) 0%, rgba(244,162,97,0.90) 100%)",
+    background:
+      "linear-gradient(180deg, rgba(233,196,106,0.92) 0%, rgba(244,162,97,0.90) 100%)",
     color: "#264653",
     borderRadius: 999,
     padding: "12px 14px",
@@ -1240,16 +1367,23 @@ const styles: Record<string, React.CSSProperties> & {
     gap: 10,
     marginBottom: 6,
   },
+
   refreshBtn: {
     border: "1px solid rgba(38,70,83,0.16)",
     background: "rgba(255,255,255,0.85)",
     borderRadius: 12,
     padding: "8px 10px",
     cursor: "pointer",
-    fontWeight: 700,
+    fontWeight: 650,
     boxShadow: "0 8px 14px rgba(38,70,83,0.08)",
   },
-  ordersList: { display: "grid", gap: 10, marginTop: 10 },
+
+  ordersList: {
+    display: "grid",
+    gap: 10,
+    marginTop: 10,
+  },
+
   orderCard: {
     background: "rgba(255,255,255,0.70)",
     border: "1px solid rgba(38,70,83,0.10)",
@@ -1257,6 +1391,7 @@ const styles: Record<string, React.CSSProperties> & {
     padding: 12,
     boxShadow: "0 10px 18px rgba(38,70,83,0.10)",
   },
+
   orderTop: {
     display: "flex",
     alignItems: "baseline",
@@ -1264,8 +1399,17 @@ const styles: Record<string, React.CSSProperties> & {
     gap: 10,
     marginBottom: 8,
   },
-  orderDate: { fontWeight: 650, color: "#264653" },
-  orderStatus: { fontWeight: 650, color: "rgba(38,70,83,0.85)" },
+
+  orderDate: {
+    fontWeight: 650,
+    color: "#264653",
+  },
+
+  orderStatus: {
+    fontWeight: 650,
+    color: "rgba(38,70,83,0.85)",
+  },
+
   orderTotals: {
     display: "grid",
     gap: 6,
@@ -1273,6 +1417,7 @@ const styles: Record<string, React.CSSProperties> & {
     borderBottom: "1px solid rgba(38,70,83,0.10)",
     marginBottom: 8,
   },
+
   orderRow: {
     display: "flex",
     alignItems: "center",
@@ -1280,6 +1425,7 @@ const styles: Record<string, React.CSSProperties> & {
     fontSize: 14,
     color: "#264653",
   },
+
   orderRowBig: {
     display: "flex",
     alignItems: "center",
@@ -1290,13 +1436,19 @@ const styles: Record<string, React.CSSProperties> & {
     marginTop: 2,
     borderTop: "1px dashed rgba(38,70,83,0.20)",
   },
-  orderItems: { display: "grid", gap: 6 },
+
+  orderItems: {
+    display: "grid",
+    gap: 6,
+  },
+
   orderItemRow: {
     display: "grid",
     gridTemplateColumns: "1fr auto auto",
     gap: 8,
     alignItems: "baseline",
   },
+
   orderItemName: {
     fontSize: 13,
     color: "rgba(38,70,83,0.90)",
@@ -1304,6 +1456,16 @@ const styles: Record<string, React.CSSProperties> & {
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
-  orderItemQty: { fontSize: 13, color: "rgba(38,70,83,0.75)", fontWeight: 600 },
-  orderItemSum: { fontSize: 13, color: "#264653", fontWeight: 650 },
+
+  orderItemQty: {
+    fontSize: 13,
+    color: "rgba(38,70,83,0.75)",
+    fontWeight: 600,
+  },
+
+  orderItemSum: {
+    fontSize: 13,
+    color: "#264653",
+    fontWeight: 650,
+  },
 };
