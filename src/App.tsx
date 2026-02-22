@@ -1001,6 +1001,10 @@ const styles: Record<string, React.CSSProperties> & {
     whiteSpace: "nowrap",
     overflow: "hidden",
     textOverflow: "ellipsis",
+    height: 44,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   navBtnActive: {
@@ -1428,3 +1432,4 @@ const styles: Record<string, React.CSSProperties> & {
     fontWeight: 650,
   },
 };
+
