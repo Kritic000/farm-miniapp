@@ -942,18 +942,28 @@ const styles: Record<string, React.CSSProperties> & {
   },
 
   navBtn: {
-    border: "1px solid rgba(38,70,83,0.18)",
-    background: "rgba(255,255,255,0.78)",
-    padding: "10px 14px",
-    borderRadius: 999,
-    fontWeight: 650,
-    cursor: "pointer",
-    boxShadow: "0 6px 14px rgba(38,70,83,0.12)",
-    color: "#264653",
-    boxSizing: "border-box",
-    whiteSpace: "nowrap",
-    maxWidth: "100%",
-  },
+  border: "1px solid rgba(38,70,83,0.18)",
+  background: "rgba(255,255,255,0.78)",
+
+  // ✅ ВОТ ЭТИ СТРОКИ ДЕЛАЮТ РАЗМЕР ОДИНАКОВЫМ
+  width: 170,               // одинаковая ширина у всех
+  height: 44,               // одинаковая высота у всех
+  padding: "0 14px",        // убираем разную высоту из-за padding
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 8,
+  lineHeight: 1,
+  boxSizing: "border-box",
+  whiteSpace: "nowrap",
+
+  borderRadius: 999,
+  fontWeight: 650,
+  cursor: "pointer",
+  boxShadow: "0 6px 14px rgba(38,70,83,0.12)",
+  color: "#264653",
+  maxWidth: "100%",
+},
 
   navBtnActive: {
     borderColor: "rgba(42,157,143,0.35)",
@@ -1381,3 +1391,4 @@ const styles: Record<string, React.CSSProperties> & {
     fontWeight: 650,
   },
 };
+
