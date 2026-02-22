@@ -471,38 +471,39 @@ export default function App() {
         <div style={styles.header}>
           <div style={styles.title}>FarmShop</div>
 
-          <div style={styles.tabs}>
-            <button
-              style={{
-                ...styles.tabBtn,
-                ...(tab === "catalog" ? styles.tabActive : {}),
-              }}
-              onClick={() => setTab("catalog")}
-            >
-              Товары
-            </button>
+          <div style={styles.tabsGrid}>
+  <button
+    style={{
+      ...styles.bigTabBtn,
+      ...(tab === "catalog" ? styles.tabActive : {}),
+    }}
+    onClick={() => setTab("catalog")}
+  >
+    Товары
+  </button>
 
-            <button
-              style={{
-                ...styles.tabBtn,
-                ...(tab === "cart" || tab === "checkout" ? styles.tabActive : {}),
-              }}
-              onClick={() => setTab("cart")}
-            >
-              🛒 Корзина ({cartCount})
-            </button>
+  <div style={styles.rightTabs}>
+    <button
+      style={{
+        ...styles.smallTabBtn,
+        ...(tab === "cart" || tab === "checkout" ? styles.tabActive : {}),
+      }}
+      onClick={() => setTab("cart")}
+    >
+      🛒 Корзина ({cartCount})
+    </button>
 
-            <button
-              style={{
-                ...styles.tabBtn,
-                ...(tab === "orders" ? styles.tabActive : {}),
-              }}
-              onClick={() => setTab("orders")}
-            >
-              📦 Заказы
-            </button>
-          </div>
-        </div>
+    <button
+      style={{
+        ...styles.smallTabBtn,
+        ...(tab === "orders" ? styles.tabActive : {}),
+      }}
+      onClick={() => setTab("orders")}
+    >
+      📦 Заказы
+    </button>
+  </div>
+</div>
 
         {loading && <div style={styles.info}>Загрузка ассортимента…</div>}
         {!loading && loadingHint && (
@@ -1415,3 +1416,4 @@ const styles: Record<string, React.CSSProperties> & {
     fontWeight: 650,
   },
 };
+
