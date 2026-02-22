@@ -706,17 +706,20 @@ const styles: Record<string, React.CSSProperties> & {
   },
 
   page: {
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
-    padding: 16,
-    minHeight: "100vh",
-    boxSizing: "border-box",
-    backgroundImage:
-      "linear-gradient(rgba(255,255,255,0.30), rgba(255,255,255,0.50)), url('/images/bg-farm.png')",
-    backgroundSize: "cover",
-    backgroundPosition: "center top",
-    backgroundRepeat: "no-repeat",
-    color: "#264653",
-  },
+  fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
+  padding: 16,
+  minHeight: "100vh",
+  boxSizing: "border-box",
+  color: "#264653",
+
+  backgroundImage:
+    "linear-gradient(rgba(255,255,255,0.30), rgba(255,255,255,0.50)), url('/images/bg-farm.png')",
+
+  backgroundSize: "100% auto",   // ← фиксируем ширину
+  backgroundPosition: "top center",
+  backgroundRepeat: "no-repeat",
+  backgroundAttachment: "fixed", // ← самое главное
+},
 
   container: {
     maxWidth: 520,
@@ -1108,3 +1111,4 @@ const styles: Record<string, React.CSSProperties> & {
     boxShadow: "0 16px 32px rgba(38,70,83,0.18)",
   },
 };
+
