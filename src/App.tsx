@@ -857,6 +857,7 @@ backgroundAttachment: "fixed",// ← самое главное
     gridTemplateColumns: "110px 1fr",
     minHeight: 108,
     boxSizing: "border-box",
+    minHeight: 130,
   },
 
   cardImg: {
@@ -1111,6 +1112,7 @@ backgroundAttachment: "fixed",// ← самое главное
     boxShadow: "0 16px 32px rgba(38,70,83,0.18)",
   },
 };
+
 
 
 
