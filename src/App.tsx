@@ -976,7 +976,7 @@ const styles: Record<string, React.CSSProperties> & {
   },
 
   title: {
-    fontSize: 26,
+    fontSize: 28,
     fontWeight: 700,
     letterSpacing: -0.2,
     background: "linear-gradient(90deg, #1E2A32 0%, #e9c46a 100%)",
@@ -990,7 +990,7 @@ const styles: Record<string, React.CSSProperties> & {
     height: 42,              // ✅ как у кнопок
     display: "flex",         // ✅
     alignItems: "center",    // ✅ вертикально по центру
-    marginLeft: 17,   // ← попробуй 4–8
+    marginLeft: 14,   // ← попробуй 4–8
   },
 
   navBtn: {
@@ -1439,6 +1439,7 @@ const styles: Record<string, React.CSSProperties> & {
     fontWeight: 650,
   },
 };
+
 
 
 
