@@ -343,7 +343,7 @@ export default function App() {
             ...(toast.type === "info" ? styles.toastInfo : {}),
           }}
         >
-          <div style={{ fontWeight: 900 }}>{toast.text}</div>
+          <div style={{ fontWeight: 700 }}>{toast.text}</div>
           <button style={styles.toastClose} onClick={() => setToast(null)}>
             ×
           </button>
@@ -351,9 +351,9 @@ export default function App() {
       )}
 
       <div style={styles.container}>
-        {/* Минималистичная шапка */}
+        {/* Шапка НЕ sticky — будет сверху и уйдёт при скролле */}
         <div style={styles.header}>
-          <div style={styles.title}></div>
+          <div style={styles.title}>FarmShop</div>
 
           <div style={styles.tabs}>
             <button
@@ -432,31 +432,19 @@ export default function App() {
                         )}
 
                         <div style={styles.cardBody}>
-                          <div style={styles.cardName}>{p.name}</div>
+                          <div style={styles.cardName} title={p.name}>
+                            {p.name}
+                          </div>
+
                           {p.description ? (
-                            <div style={styles.cardDesc}>{p.description}</div>
+                            <div style={styles.cardDesc} title={p.description}>
+                              {p.description}
+                            </div>
                           ) : null}
 
-                          {/* ✅ Цена: цветная только сумма (и без дубля unit) */}
                           <div style={styles.cardMeta}>
-                            <span
-                              style={{
-                                color: styles.colors.primary,
-                                fontWeight: 950,
-                              }}
-                            >
-                              {money(p.price)} ₽
-                            </span>
-                            <span
-                              style={{
-                                color: styles.colors.ink,
-                                opacity: 0.9,
-                                fontWeight: 850,
-                              }}
-                            >
-                              {" "}
-                              / {p.unit}
-                            </span>
+                            <span style={styles.price}>{money(p.price)} ₽</span>
+                            <span style={styles.unit}> / {p.unit}</span>
                           </div>
 
                           {q === 0 ? (
@@ -542,7 +530,7 @@ export default function App() {
                     <div style={styles.totalBlock}>
                       <div style={styles.totalRow}>
                         <div>Товары</div>
-                        <div style={{ fontWeight: 900 }}>{money(total)} ₽</div>
+                        <div style={{ fontWeight: 700 }}>{money(total)} ₽</div>
                       </div>
 
                       <div style={styles.totalRow}>
@@ -556,14 +544,14 @@ export default function App() {
                             </span>
                           )}
                         </div>
-                        <div style={{ fontWeight: 900 }}>
+                        <div style={{ fontWeight: 700 }}>
                           {money(delivery)} ₽
                         </div>
                       </div>
 
                       <div style={styles.totalRowBig}>
                         <div>Итого</div>
-                        <div style={{ fontWeight: 950 }}>
+                        <div style={{ fontWeight: 800 }}>
                           {money(grandTotal)} ₽
                         </div>
                       </div>
@@ -630,7 +618,7 @@ export default function App() {
                 <div style={styles.totalBlock}>
                   <div style={styles.totalRow}>
                     <div>Товары</div>
-                    <div style={{ fontWeight: 900 }}>{money(total)} ₽</div>
+                    <div style={{ fontWeight: 700 }}>{money(total)} ₽</div>
                   </div>
 
                   <div style={styles.totalRow}>
@@ -644,14 +632,14 @@ export default function App() {
                         </span>
                       )}
                     </div>
-                    <div style={{ fontWeight: 900 }}>
+                    <div style={{ fontWeight: 700 }}>
                       {money(delivery)} ₽
                     </div>
                   </div>
 
                   <div style={styles.totalRowBig}>
                     <div>Итого</div>
-                    <div style={{ fontWeight: 950 }}>
+                    <div style={{ fontWeight: 800 }}>
                       {money(grandTotal)} ₽
                     </div>
                   </div>
@@ -660,7 +648,7 @@ export default function App() {
                 <button
                   style={{
                     ...styles.primaryBtn,
-                    opacity: sending ? 0.7 : 1,
+                    opacity: sending ? 0.75 : 1,
                     cursor: sending ? "not-allowed" : "pointer",
                   }}
                   onClick={submitOrder}
@@ -686,6 +674,13 @@ export default function App() {
           </>
         )}
       </div>
+
+      {/* ✅ Плавающая корзина ВОЗВРАЩЕНА */}
+      {tab === "catalog" && cartCount > 0 && (
+        <button style={styles.floatingCart} onClick={() => setTab("cart")}>
+          🛒 {cartCount} • {money(grandTotal)} ₽
+        </button>
+      )}
     </div>
   );
 }
@@ -715,8 +710,6 @@ const styles: Record<string, React.CSSProperties> & {
     padding: 16,
     minHeight: "100vh",
     boxSizing: "border-box",
-
-    // фон-картинка + “вуаль”
     backgroundImage:
       "linear-gradient(rgba(255,255,255,0.30), rgba(255,255,255,0.50)), url('/images/bg-farm.png')",
     backgroundSize: "cover",
@@ -725,7 +718,6 @@ const styles: Record<string, React.CSSProperties> & {
     color: "#264653",
   },
 
-  // ✅ важно для мобилки: width+boxSizing, чтобы не вылезало
   container: {
     maxWidth: 520,
     width: "100%",
@@ -734,8 +726,8 @@ const styles: Record<string, React.CSSProperties> & {
     background: "rgba(255,255,255,0.60)",
     borderRadius: 22,
     padding: 12,
-    boxShadow: "0 20px 40px rgba(38,70,83,0.22)",
-    border: "1px solid rgba(38,70,83,0.12)",
+    boxShadow: "0 18px 34px rgba(38,70,83,0.18)",
+    border: "1px solid rgba(38,70,83,0.10)",
     backdropFilter: "blur(8px)",
     WebkitBackdropFilter: "blur(8px)",
   },
@@ -750,9 +742,9 @@ const styles: Record<string, React.CSSProperties> & {
     gap: 10,
     padding: "12px 12px",
     borderRadius: 14,
-    boxShadow: "0 12px 26px rgba(38,70,83,0.20)",
+    boxShadow: "0 10px 22px rgba(38,70,83,0.16)",
     marginBottom: 10,
-    border: "1px solid rgba(38,70,83,0.12)",
+    border: "1px solid rgba(38,70,83,0.10)",
     background: "rgba(255,255,255,0.92)",
     color: "#264653",
     backdropFilter: "blur(10px)",
@@ -772,11 +764,8 @@ const styles: Record<string, React.CSSProperties> & {
     color: "#264653",
   },
 
-  // ✅ Минимализм: без “плашки” под названием
+  // ✅ НЕ sticky — чтобы не “ехало” за скроллом
   header: {
-    position: "sticky",
-    top: 0,
-    zIndex: 50,
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
@@ -788,9 +777,9 @@ const styles: Record<string, React.CSSProperties> & {
   },
 
   title: {
-    fontSize: 28,
-    fontWeight: 950,
-    letterSpacing: -0.6,
+    fontSize: 22,
+    fontWeight: 700,
+    letterSpacing: -0.2,
     color: "#264653",
   },
 
@@ -801,9 +790,9 @@ const styles: Record<string, React.CSSProperties> & {
     background: "rgba(255,255,255,0.78)",
     padding: "10px 16px",
     borderRadius: 999,
-    fontWeight: 950,
+    fontWeight: 650,
     cursor: "pointer",
-    boxShadow: "0 8px 18px rgba(38,70,83,0.16)",
+    boxShadow: "0 6px 14px rgba(38,70,83,0.12)",
     color: "#264653",
     backdropFilter: "blur(10px)",
     WebkitBackdropFilter: "blur(10px)",
@@ -814,7 +803,7 @@ const styles: Record<string, React.CSSProperties> & {
     background:
       "linear-gradient(180deg, rgba(42,157,143,0.98) 0%, rgba(38,70,83,0.98) 140%)",
     color: "#ffffff",
-    boxShadow: "0 14px 30px rgba(42,157,143,0.26)",
+    boxShadow: "0 10px 22px rgba(42,157,143,0.20)",
   },
 
   chipsRow: {
@@ -830,13 +819,11 @@ const styles: Record<string, React.CSSProperties> & {
     background: "rgba(255,255,255,0.74)",
     padding: "9px 12px",
     borderRadius: 999,
-    fontWeight: 950,
+    fontWeight: 600,
     cursor: "pointer",
     whiteSpace: "nowrap",
-    boxShadow: "0 8px 18px rgba(38,70,83,0.14)",
+    boxShadow: "0 6px 14px rgba(38,70,83,0.10)",
     color: "#264653",
-    backdropFilter: "blur(10px)",
-    WebkitBackdropFilter: "blur(10px)",
     boxSizing: "border-box",
   },
   chipActive: {
@@ -844,96 +831,125 @@ const styles: Record<string, React.CSSProperties> & {
       "linear-gradient(180deg, rgba(42,157,143,0.98) 0%, rgba(38,70,83,0.98) 140%)",
     color: "#ffffff",
     borderColor: "rgba(42,157,143,0.35)",
-    boxShadow: "0 14px 30px rgba(42,157,143,0.22)",
+    boxShadow: "0 10px 22px rgba(42,157,143,0.18)",
   },
 
-  info: { padding: 12, fontWeight: 900, color: "#264653" },
-  infoMuted: { padding: 8, color: "rgba(38,70,83,0.82)", fontWeight: 800 },
+  info: { padding: 12, fontWeight: 650, color: "#264653" },
+  infoMuted: { padding: 8, color: "rgba(38,70,83,0.82)", fontWeight: 550 },
 
   list: { display: "grid", gap: 12 },
 
+  /**
+   * ✅ ВАЖНОЕ: одинаковый “размер карточки” как в “Курица”
+   * - фиксируем высоту картинки слева
+   * - ограничиваем описание (2 строки), чтобы карточка не раздувалась
+   */
   card: {
     background: "rgba(255,255,255,0.55)",
     borderRadius: 18,
     overflow: "hidden",
-    boxShadow: "0 12px 26px rgba(38,70,83,0.16)",
-    border: "1px solid rgba(38,70,83,0.12)",
+    boxShadow: "0 10px 22px rgba(38,70,83,0.14)",
+    border: "1px solid rgba(38,70,83,0.10)",
     display: "grid",
-    gridTemplateColumns: "120px 1fr",
-    backdropFilter: "blur(10px)",
-    WebkitBackdropFilter: "blur(10px)",
+    gridTemplateColumns: "110px 1fr",
+    minHeight: 108,
     boxSizing: "border-box",
   },
 
-  cardImg: { width: 120, height: 120, objectFit: "cover", display: "block" },
+  cardImg: {
+    width: 110,
+    height: 108,
+    objectFit: "cover",
+    display: "block",
+  },
 
   cardImgPlaceholder: {
-    width: 120,
-    height: 120,
+    width: 110,
+    height: 108,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     background: "rgba(233,196,106,0.22)",
     color: "#264653",
-    fontWeight: 950,
+    fontWeight: 650,
     boxSizing: "border-box",
   },
 
-  cardBody: { padding: 12, display: "flex", flexDirection: "column", gap: 8 },
+  cardBody: {
+    padding: 12,
+    display: "flex",
+    flexDirection: "column",
+    gap: 6,
+    justifyContent: "center",
+    boxSizing: "border-box",
+  },
+
   cardName: {
-    fontSize: 18,
-    fontWeight: 950,
+    fontSize: 16,
+    fontWeight: 650,
     lineHeight: 1.15,
     color: "#264653",
+    display: "-webkit-box",
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: "vertical",
+    overflow: "hidden",
   },
+
+  // ✅ Описание всегда максимум 2 строки (чтобы размер был одинаковый)
   cardDesc: {
-    fontSize: 13,
-    color: "rgba(38,70,83,0.90)",
-    lineHeight: 1.25,
-    fontWeight: 700,
+    fontSize: 12,
+    color: "rgba(38,70,83,0.80)",
+    lineHeight: 1.2,
+    fontWeight: 450,
+    display: "-webkit-box",
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: "vertical",
+    overflow: "hidden",
   },
-  cardMeta: { color: "#111111", fontWeight: 950 },
+
+  cardMeta: { fontWeight: 550 },
+
+  price: { color: "#2a9d8f", fontWeight: 700 },
+  unit: { color: "rgba(38,70,83,0.85)", fontWeight: 500 },
 
   buyBtn: {
-    marginTop: 6,
+    marginTop: 4,
     background:
       "linear-gradient(180deg, rgba(42,157,143,1) 0%, rgba(38,70,83,1) 140%)",
     color: "#fff",
     border: "1px solid rgba(255,255,255,0.22)",
     borderRadius: 14,
-    padding: "10px 14px",
-    fontWeight: 950,
+    padding: "9px 12px",
+    fontWeight: 650,
     cursor: "pointer",
     width: "fit-content",
-    boxShadow: "0 14px 30px rgba(42,157,143,0.22)",
+    boxShadow: "0 10px 22px rgba(42,157,143,0.18)",
     boxSizing: "border-box",
   },
 
-  qtyInline: { display: "flex", alignItems: "center", gap: 8, marginTop: 6 },
+  qtyInline: { display: "flex", alignItems: "center", gap: 8, marginTop: 4 },
 
   qtyBox: { display: "flex", alignItems: "center", gap: 6 },
   qtyBtn: {
-    width: 36,
-    height: 36,
+    width: 34,
+    height: 34,
     borderRadius: 12,
     border: "1px solid rgba(38,70,83,0.16)",
     background: "rgba(255,255,255,0.82)",
     fontSize: 18,
     cursor: "pointer",
-    boxShadow: "0 10px 20px rgba(38,70,83,0.14)",
+    boxShadow: "0 8px 16px rgba(38,70,83,0.10)",
     color: "#264653",
     boxSizing: "border-box",
   },
-  qtyNum: { minWidth: 24, textAlign: "center", fontWeight: 950, color: "#264653" },
+  qtyNum: { minWidth: 24, textAlign: "center", fontWeight: 650, color: "#264653" },
 
   panel: {
     background: "rgba(255,255,255,0.80)",
     borderRadius: 18,
     padding: 12,
-    boxShadow: "0 12px 26px rgba(38,70,83,0.16)",
-    border: "1px solid rgba(38,70,83,0.12)",
-    backdropFilter: "blur(10px)",
-    WebkitBackdropFilter: "blur(10px)",
+    boxShadow: "0 10px 22px rgba(38,70,83,0.14)",
+    border: "1px solid rgba(38,70,83,0.10)",
     boxSizing: "border-box",
   },
 
@@ -944,10 +960,10 @@ const styles: Record<string, React.CSSProperties> & {
     padding: "10px 0",
     borderBottom: "1px solid rgba(38,70,83,0.10)",
   },
-  cartName: { fontWeight: 950, color: "#264653" },
-  cartMeta: { color: "rgba(38,70,83,0.90)", fontWeight: 800, fontSize: 13 },
+  cartName: { fontWeight: 650, color: "#264653" },
+  cartMeta: { color: "rgba(38,70,83,0.80)", fontWeight: 450, fontSize: 13 },
 
-  cartSum: { width: 90, textAlign: "right", fontWeight: 950, color: "#264653" },
+  cartSum: { width: 90, textAlign: "right", fontWeight: 650, color: "#264653" },
 
   removeBtn: {
     border: "1px solid rgba(231,111,81,0.55)",
@@ -957,7 +973,7 @@ const styles: Record<string, React.CSSProperties> & {
     fontSize: 16,
     cursor: "pointer",
     padding: "6px 10px",
-    boxShadow: "0 10px 18px rgba(231,111,81,0.18)",
+    boxShadow: "0 8px 14px rgba(231,111,81,0.14)",
     boxSizing: "border-box",
   },
 
@@ -973,15 +989,15 @@ const styles: Record<string, React.CSSProperties> & {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    fontSize: 15,
+    fontSize: 14,
     color: "#264653",
-    fontWeight: 800,
+    fontWeight: 550,
   },
   totalRowBig: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    fontSize: 17,
+    fontSize: 16,
     paddingTop: 6,
     marginTop: 4,
     borderTop: "1px dashed rgba(38,70,83,0.22)",
@@ -994,7 +1010,7 @@ const styles: Record<string, React.CSSProperties> & {
     borderRadius: 999,
     background: "rgba(233,196,106,0.30)",
     color: "#264653",
-    fontWeight: 950,
+    fontWeight: 650,
     fontSize: 12,
     border: "1px solid rgba(233,196,106,0.65)",
     boxSizing: "border-box",
@@ -1005,23 +1021,22 @@ const styles: Record<string, React.CSSProperties> & {
     borderRadius: 999,
     background: "rgba(244,162,97,0.18)",
     color: "#264653",
-    fontWeight: 900,
+    fontWeight: 600,
     fontSize: 12,
     border: "1px solid rgba(244,162,97,0.55)",
     boxSizing: "border-box",
   },
 
-  h2: { fontSize: 20, fontWeight: 950, marginBottom: 10, color: "#264653" },
+  h2: { fontSize: 18, fontWeight: 650, marginBottom: 10, color: "#264653" },
 
   label: {
     display: "block",
     marginTop: 10,
-    fontWeight: 900,
+    fontWeight: 600,
     fontSize: 14,
     color: "#264653",
   },
 
-  // ✅ чтобы инпуты не вылезали на телефоне
   input: {
     width: "100%",
     boxSizing: "border-box",
@@ -1032,7 +1047,7 @@ const styles: Record<string, React.CSSProperties> & {
     fontSize: 14,
     background: "rgba(255,255,255,0.86)",
     outline: "none",
-    boxShadow: "0 10px 18px rgba(38,70,83,0.10)",
+    boxShadow: "0 8px 14px rgba(38,70,83,0.08)",
     color: "#264653",
   },
 
@@ -1045,9 +1060,9 @@ const styles: Record<string, React.CSSProperties> & {
     border: "1px solid rgba(255,255,255,0.22)",
     borderRadius: 16,
     padding: "13px 14px",
-    fontWeight: 950,
+    fontWeight: 650,
     cursor: "pointer",
-    boxShadow: "0 16px 34px rgba(42,157,143,0.24)",
+    boxShadow: "0 12px 26px rgba(42,157,143,0.18)",
     boxSizing: "border-box",
   },
 
@@ -1059,17 +1074,37 @@ const styles: Record<string, React.CSSProperties> & {
     border: "1px solid rgba(244,162,97,0.55)",
     borderRadius: 16,
     padding: "13px 14px",
-    fontWeight: 950,
+    fontWeight: 650,
     cursor: "pointer",
-    boxShadow: "0 12px 26px rgba(244,162,97,0.18)",
+    boxShadow: "0 10px 22px rgba(244,162,97,0.14)",
     boxSizing: "border-box",
   },
 
   note: {
     marginTop: 10,
     fontSize: 12,
-    color: "rgba(38,70,83,0.86)",
-    fontWeight: 700,
+    color: "rgba(38,70,83,0.80)",
+    fontWeight: 450,
+  },
+
+  // ✅ Плавающая корзина (fixed)
+  floatingCart: {
+    position: "fixed",
+    left: "50%",
+    transform: "translateX(-50%)",
+    bottom: 16,
+    zIndex: 9999,
+    maxWidth: 520,
+    width: "calc(100% - 32px)",
+    boxSizing: "border-box",
+    border: "1px solid rgba(38,70,83,0.16)",
+    background:
+      "linear-gradient(180deg, rgba(233,196,106,0.92) 0%, rgba(244,162,97,0.90) 100%)",
+    color: "#264653",
+    borderRadius: 999,
+    padding: "12px 14px",
+    fontWeight: 650,
+    cursor: "pointer",
+    boxShadow: "0 16px 32px rgba(38,70,83,0.18)",
   },
 };
-
