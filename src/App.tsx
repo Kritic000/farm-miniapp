@@ -609,7 +609,7 @@ const styles: Record<string, React.CSSProperties> & {
     minHeight: "100vh",
     // фон-картинка + вуаль
     backgroundImage:
-      "linear-gradient(rgba(255,255,255,0.55), rgba(255,255,255,0.85)), url('/images/bg-farm.png')",
+      "linear-gradient(rgba(255,255,255,0.35), rgba(255,255,255,0.60)), url('/images/bg-farm.png')",
     backgroundSize: "cover",
     backgroundPosition: "center top",
     backgroundRepeat: "no-repeat",
@@ -945,3 +945,4 @@ const styles: Record<string, React.CSSProperties> & {
     WebkitBackdropFilter: "blur(10px)",
   },
 };
+
