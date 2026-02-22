@@ -685,13 +685,6 @@ export default function App() {
           </>
         )}
       </div>
-
-      {/* Плавающая корзина */}
-      {tab === "catalog" && cartCount > 0 && (
-        <button style={styles.floatingCart} onClick={() => setTab("cart")}>
-          🛒 Корзина: {cartCount} • {money(grandTotal)} ₽
-        </button>
-      )}
     </div>
   );
 }
@@ -1098,3 +1091,4 @@ const styles: Record<string, React.CSSProperties> & {
     boxShadow: "0 18px 38px rgba(38,70,83,0.22)",
   },
 };
+
