@@ -761,7 +761,7 @@ const styles: Record<string, React.CSSProperties> & {
   cardBody: { padding: 12, display: "flex", flexDirection: "column", gap: 8 },
   cardName: { fontSize: 18, fontWeight: 950, lineHeight: 1.15, color: "#264653" },
   cardDesc: { fontSize: 13, color: "rgba(38,70,83,0.90)", lineHeight: 1.25, fontWeight: 700 },
-  cardMeta: { color: "##e9c46a", fontWeight: 950 },
+  cardMeta: { color: "#e9c46a", fontWeight: 950 },
 
   buyBtn: {
     marginTop: 6,
@@ -945,6 +945,7 @@ const styles: Record<string, React.CSSProperties> & {
     WebkitBackdropFilter: "blur(10px)",
   },
 };
+
 
 
 
