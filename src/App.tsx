@@ -477,24 +477,11 @@ export default function App() {
       )}
 
       <div style={styles.container}>
-        {/* ===== HEADER (Вариант 2: 2 ряда) ===== */}
-        <div style={styles.header}>
-          {/* Row 1: Название + Корзина */}
-          <div style={styles.headerRow}>
+        {/* ===== HEADER (вариант 2: слева бренд+товары, справа корзина+заказы) ===== */}
+        <div style={styles.headerGrid}>
+          <div style={styles.headerLeft}>
             <div style={styles.title}>FarmShop</div>
-            <button
-              style={{
-                ...styles.navBtn,
-                ...(tab === "cart" || tab === "checkout" ? styles.navBtnActive : {}),
-              }}
-              onClick={() => setTab("cart")}
-            >
-              🛒 Корзина ({cartCount})
-            </button>
-          </div>
 
-          {/* Row 2: Товары + Заказы */}
-          <div style={styles.headerRow}>
             <button
               style={{
                 ...styles.navBtn,
@@ -503,6 +490,18 @@ export default function App() {
               onClick={() => setTab("catalog")}
             >
               Товары
+            </button>
+          </div>
+
+          <div style={styles.headerRight}>
+            <button
+              style={{
+                ...styles.navBtn,
+                ...(tab === "cart" || tab === "checkout" ? styles.navBtnActive : {}),
+              }}
+              onClick={() => setTab("cart")}
+            >
+              🛒 Корзина ({cartCount})
             </button>
 
             <button
@@ -518,8 +517,12 @@ export default function App() {
         </div>
 
         {loading && <div style={styles.info}>Загрузка ассортимента…</div>}
-        {!loading && loadingHint && <div style={styles.infoMuted}>{loadingHint}</div>}
-        {error && <div style={{ ...styles.info, color: styles.colors.danger }}>{error}</div>}
+        {!loading && loadingHint && (
+          <div style={styles.infoMuted}>{loadingHint}</div>
+        )}
+        {error && (
+          <div style={{ ...styles.info, color: styles.colors.danger }}>{error}</div>
+        )}
 
         {!loading && !error && (
           <>
@@ -554,7 +557,8 @@ export default function App() {
                             loading="lazy"
                             decoding="async"
                             onError={(e) => {
-                              (e.currentTarget as HTMLImageElement).style.display = "none";
+                              (e.currentTarget as HTMLImageElement).style.display =
+                                "none";
                             }}
                           />
                         ) : (
@@ -583,11 +587,17 @@ export default function App() {
                             </button>
                           ) : (
                             <div style={styles.qtyInline}>
-                              <button style={styles.qtyBtn} onClick={() => setQty(p.id, q - 1)}>
+                              <button
+                                style={styles.qtyBtn}
+                                onClick={() => setQty(p.id, q - 1)}
+                              >
                                 −
                               </button>
                               <div style={styles.qtyNum}>{q}</div>
-                              <button style={styles.qtyBtn} onClick={() => setQty(p.id, q + 1)}>
+                              <button
+                                style={styles.qtyBtn}
+                                onClick={() => setQty(p.id, q + 1)}
+                              >
                                 +
                               </button>
                             </div>
@@ -616,18 +626,29 @@ export default function App() {
                         </div>
 
                         <div style={styles.qtyBox}>
-                          <button style={styles.qtyBtn} onClick={() => setQty(it.product.id, it.qty - 1)}>
+                          <button
+                            style={styles.qtyBtn}
+                            onClick={() => setQty(it.product.id, it.qty - 1)}
+                          >
                             −
                           </button>
                           <div style={styles.qtyNum}>{it.qty}</div>
-                          <button style={styles.qtyBtn} onClick={() => setQty(it.product.id, it.qty + 1)}>
+                          <button
+                            style={styles.qtyBtn}
+                            onClick={() => setQty(it.product.id, it.qty + 1)}
+                          >
                             +
                           </button>
                         </div>
 
-                        <div style={styles.cartSum}>{money(it.qty * it.product.price)} ₽</div>
+                        <div style={styles.cartSum}>
+                          {money(it.qty * it.product.price)} ₽
+                        </div>
 
-                        <button style={styles.removeBtn} onClick={() => setQty(it.product.id, 0)}>
+                        <button
+                          style={styles.removeBtn}
+                          onClick={() => setQty(it.product.id, 0)}
+                        >
                           ✕
                         </button>
                       </div>
@@ -645,7 +666,9 @@ export default function App() {
                           {delivery === 0 ? (
                             <span style={styles.freeTag}>бесплатно</span>
                           ) : (
-                            <span style={styles.mutedTag}>до {money(FREE_DELIVERY_FROM)} ₽</span>
+                            <span style={styles.mutedTag}>
+                              до {money(FREE_DELIVERY_FROM)} ₽
+                            </span>
                           )}
                         </div>
                         <div style={{ fontWeight: 700 }}>{money(delivery)} ₽</div>
@@ -723,7 +746,9 @@ export default function App() {
                       {delivery === 0 ? (
                         <span style={styles.freeTag}>бесплатно</span>
                       ) : (
-                        <span style={styles.mutedTag}>до {money(FREE_DELIVERY_FROM)} ₽</span>
+                        <span style={styles.mutedTag}>
+                          до {money(FREE_DELIVERY_FROM)} ₽
+                        </span>
                       )}
                     </div>
                     <div style={{ fontWeight: 700 }}>{money(delivery)} ₽</div>
@@ -747,7 +772,11 @@ export default function App() {
                   {sending ? "Отправляем..." : "Подтвердить заказ"}
                 </button>
 
-                <button style={styles.secondaryBtn} onClick={() => setTab("cart")} disabled={sending}>
+                <button
+                  style={styles.secondaryBtn}
+                  onClick={() => setTab("cart")}
+                  disabled={sending}
+                >
                   Назад в корзину
                 </button>
 
@@ -772,13 +801,19 @@ export default function App() {
                 </div>
 
                 {ordersError ? (
-                  <div style={{ ...styles.info, color: styles.colors.danger }}>{ordersError}</div>
+                  <div style={{ ...styles.info, color: styles.colors.danger }}>
+                    {ordersError}
+                  </div>
                 ) : null}
 
-                {ordersLoading && !orders.length ? <div style={styles.info}>Загружаем заказы…</div> : null}
+                {ordersLoading && !orders.length ? (
+                  <div style={styles.info}>Загружаем заказы…</div>
+                ) : null}
 
                 {!ordersLoading && !ordersError && orders.length === 0 ? (
-                  <div style={styles.infoMuted}>Заказов пока нет. Оформи первый заказ — и он появится здесь.</div>
+                  <div style={styles.infoMuted}>
+                    Заказов пока нет. Оформи первый заказ — и он появится здесь.
+                  </div>
                 ) : null}
 
                 <div style={styles.ordersList}>
@@ -884,6 +919,7 @@ const styles: Record<string, React.CSSProperties> & {
     border: "1px solid rgba(38,70,83,0.10)",
     backdropFilter: "blur(8px)",
     WebkitBackdropFilter: "blur(8px)",
+    overflow: "hidden", // важное: ничего не вылезет за края
   },
 
   toast: {
@@ -918,20 +954,25 @@ const styles: Record<string, React.CSSProperties> & {
     color: "#264653",
   },
 
-  header: {
+  // ===== FIX: стабильная шапка без вылезаний =====
+  headerGrid: {
     display: "grid",
+    gridTemplateColumns: "1fr 1fr",
     gap: 10,
+    alignItems: "start",
     marginBottom: 12,
   },
 
-  headerRow: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
+  headerLeft: {
+    display: "grid",
     gap: 10,
-    width: "100%",
-    boxSizing: "border-box",
-    minWidth: 0, // ✅ важно: разрешаем строке сжиматься
+    minWidth: 0,
+  },
+
+  headerRight: {
+    display: "grid",
+    gap: 10,
+    minWidth: 0,
   },
 
   title: {
@@ -940,39 +981,27 @@ const styles: Record<string, React.CSSProperties> & {
     letterSpacing: -0.2,
     color: "#264653",
     minWidth: 0,
-    overflow: "hidden",        // ✅
-    textOverflow: "ellipsis",  // ✅
-    whiteSpace: "nowrap",      // ✅
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
   },
 
   navBtn: {
-  border: "1px solid rgba(38,70,83,0.18)",
-  background: "rgba(255,255,255,0.78)",
-
-  // ✅ ВОТ ЭТИ СТРОКИ ДЕЛАЮТ РАЗМЕР ОДИНАКОВЫМ
-  width: 170,               // одинаковая ширина у всех
-  height: 44,               // одинаковая высота у всех
-  padding: "0 14px",        // убираем разную высоту из-за padding
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: 8,
-  lineHeight: 1,
-  boxSizing: "border-box",
-  whiteSpace: "nowrap",
-
-  flexShrink: 0,       // ✅ чтобы кнопка не "ломалась"
-  maxWidth: "48%",      // ✅ две кнопки в ряд не вылезут
-  overflow: "hidden",   // ✅
-  textOverflow: "ellipsis", // ✅ если текст слишком длинный
-
-  borderRadius: 999,
-  fontWeight: 650,
-  cursor: "pointer",
-  boxShadow: "0 6px 14px rgba(38,70,83,0.12)",
-  color: "#264653",
-  maxWidth: "100%",
-},
+    width: "100%", // одинаковая ширина в своей колонке
+    maxWidth: "100%",
+    boxSizing: "border-box",
+    border: "1px solid rgba(38,70,83,0.18)",
+    background: "rgba(255,255,255,0.78)",
+    padding: "10px 14px",
+    borderRadius: 999,
+    fontWeight: 650,
+    cursor: "pointer",
+    boxShadow: "0 6px 14px rgba(38,70,83,0.12)",
+    color: "#264653",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
 
   navBtnActive: {
     borderColor: "rgba(42,157,143,0.35)",
@@ -1016,7 +1045,6 @@ const styles: Record<string, React.CSSProperties> & {
 
   list: { display: "grid", gap: 12 },
 
-  // фиксируем одинаковую “геометрию” карточки/картинки для всех категорий
   card: {
     background: "rgba(255,255,255,0.55)",
     borderRadius: 18,
@@ -1400,5 +1428,3 @@ const styles: Record<string, React.CSSProperties> & {
     fontWeight: 650,
   },
 };
-
-
