@@ -984,6 +984,10 @@ const styles: Record<string, React.CSSProperties> & {
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
+    
+    height: 42,              // ✅ как у кнопок
+    display: "flex",         // ✅
+    alignItems: "center",    // ✅ вертикально по центру
   },
 
   navBtn: {
@@ -1432,5 +1436,6 @@ const styles: Record<string, React.CSSProperties> & {
     fontWeight: 650,
   },
 };
+
 
 
