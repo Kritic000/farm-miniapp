@@ -906,7 +906,7 @@ backgroundAttachment: "fixed",// ← самое главное
   lineHeight: 1.2,
   fontWeight: 450,
   display: "-webkit-box",
-  WebkitLineClamp: 4,       // ✅ было 2 → стало 4
+  WebkitLineClamp: 5,       // ✅ было 2 → стало 4
   WebkitBoxOrient: "vertical",
   overflow: "hidden",
 },
@@ -1112,6 +1112,7 @@ backgroundAttachment: "fixed",// ← самое главное
     boxShadow: "0 16px 32px rgba(38,70,83,0.18)",
   },
 };
+
 
 
 
