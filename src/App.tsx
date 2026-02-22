@@ -976,7 +976,7 @@ const styles: Record<string, React.CSSProperties> & {
   },
 
   title: {
-    fontSize: 28,
+    fontSize: 27,
     fontWeight: 700,
     letterSpacing: -0.2,
     background: "linear-gradient(90deg, #1E2A32 0%, #e9c46a 100%)",
@@ -1439,6 +1439,7 @@ const styles: Record<string, React.CSSProperties> & {
     fontWeight: 650,
   },
 };
+
 
 
 
