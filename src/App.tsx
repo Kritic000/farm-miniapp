@@ -324,7 +324,7 @@ export default function App() {
 
       <div style={styles.container}>
         <div style={styles.header}>
-          <div style={styles.title}>Каталог</div>
+          <div style={styles.title}>Нашенское</div>
 
           <div style={styles.tabs}>
             <button
@@ -609,7 +609,7 @@ const styles: Record<string, React.CSSProperties> & {
     minHeight: "100vh",
     // фон-картинка + вуаль
     backgroundImage:
-      "linear-gradient(rgba(255,255,255,0.30), rgba(255,255,255,0.55)), url('/images/bg-farm.png')",
+      "linear-gradient(rgba(255,255,255,0.30), rgba(255,255,255,0.50)), url('/images/bg-farm.png')",
     backgroundSize: "cover",
     backgroundPosition: "center top",
     backgroundRepeat: "no-repeat",
@@ -669,7 +669,7 @@ const styles: Record<string, React.CSSProperties> & {
     gap: 10,
     marginBottom: 12,
     padding: "10px 0",
-    background: "rgba(255,255,255,0.62)",
+    background: "rgba(255,255,255,0.50)",
     backdropFilter: "blur(10px)",
     WebkitBackdropFilter: "blur(10px)",
     borderBottom: "1px solid rgba(38,70,83,0.10)",
@@ -761,7 +761,7 @@ const styles: Record<string, React.CSSProperties> & {
   cardBody: { padding: 12, display: "flex", flexDirection: "column", gap: 8 },
   cardName: { fontSize: 18, fontWeight: 950, lineHeight: 1.15, color: "#264653" },
   cardDesc: { fontSize: 13, color: "rgba(38,70,83,0.90)", lineHeight: 1.25, fontWeight: 700 },
-  cardMeta: { color: "#264653", fontWeight: 950 },
+  cardMeta: { color: "##e9c46a", fontWeight: 950 },
 
   buyBtn: {
     marginTop: 6,
@@ -945,6 +945,7 @@ const styles: Record<string, React.CSSProperties> & {
     WebkitBackdropFilter: "blur(10px)",
   },
 };
+
 
 
 
