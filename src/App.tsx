@@ -931,6 +931,7 @@ const styles: Record<string, React.CSSProperties> & {
     gap: 10,
     width: "100%",
     boxSizing: "border-box",
+    minWidth: 0, // ✅ важно: разрешаем строке сжиматься
   },
 
   title: {
@@ -939,6 +940,9 @@ const styles: Record<string, React.CSSProperties> & {
     letterSpacing: -0.2,
     color: "#264653",
     minWidth: 0,
+    overflow: "hidden",        // ✅
+    textOverflow: "ellipsis",  // ✅
+    whiteSpace: "nowrap",      // ✅
   },
 
   navBtn: {
@@ -956,6 +960,11 @@ const styles: Record<string, React.CSSProperties> & {
   lineHeight: 1,
   boxSizing: "border-box",
   whiteSpace: "nowrap",
+
+  flexShrink: 0,       // ✅ чтобы кнопка не "ломалась"
+  maxWidth: "48%",      // ✅ две кнопки в ряд не вылезут
+  overflow: "hidden",   // ✅
+  textOverflow: "ellipsis", // ✅ если текст слишком длинный
 
   borderRadius: 999,
   fontWeight: 650,
@@ -1391,4 +1400,5 @@ const styles: Record<string, React.CSSProperties> & {
     fontWeight: 650,
   },
 };
+
 
