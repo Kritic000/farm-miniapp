@@ -619,7 +619,7 @@ const styles: Record<string, React.CSSProperties> & {
   container: {
     maxWidth: 520,
     margin: "0 auto",
-    background: "rgba(255,255,255,0.80)",
+    background: "rgba(255,255,255,0.60)",
     borderRadius: 22,
     padding: 14,
     boxShadow: "0 20px 40px rgba(38,70,83,0.22)",
@@ -945,5 +945,6 @@ const styles: Record<string, React.CSSProperties> & {
     WebkitBackdropFilter: "blur(10px)",
   },
 };
+
 
 
