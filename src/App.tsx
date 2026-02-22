@@ -979,7 +979,7 @@ const styles: Record<string, React.CSSProperties> & {
     fontSize: 22,
     fontWeight: 700,
     letterSpacing: -0.2,
-    background: "linear-gradient(90deg, #264653 0%, #2a9d8f 100%)",
+    background: "linear-gradient(90deg, #264653 0%, #e9c46a 100%)",
     WebkitBackgroundClip: "text",
     WebkitTextFillColor: "transparent",
     minWidth: 0,
@@ -1439,6 +1439,7 @@ const styles: Record<string, React.CSSProperties> & {
     fontWeight: 650,
   },
 };
+
 
 
 
