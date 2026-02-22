@@ -91,7 +91,6 @@ async function fetchWithTimeout(
 }
 
 export default function App() {
-  // === ВАЖНО: токен должен совпадать с API_TOKEN в Apps Script ===
   const API_TOKEN = "Kjhytccb18@";
 
   const [loading, setLoading] = useState(true);
@@ -137,7 +136,6 @@ export default function App() {
     let cancelled = false;
 
     (async () => {
-      // 1) попробуем кэш
       const cached = loadProductsCache();
       const hasFreshCache = !!(cached && Date.now() - cached.ts < PRODUCTS_CACHE_TTL_MS);
 
@@ -146,13 +144,14 @@ export default function App() {
         setError("");
         setLoadingHint("");
 
+        // 1) показать кэш мгновенно
         if (hasFreshCache && cached) {
           setProducts(cached.products);
           setLoading(false);
           setLoadingHint("Обновляем ассортимент…");
         }
 
-        // 2) сеть (с таймаутом)
+        // 2) подтянуть с сервера
         const url = `${API_URL}?action=products&ts=${Date.now()}`;
         const res = await fetchWithTimeout(url, { method: "GET", timeoutMs: 25000 });
         const data = await res.json();
@@ -174,7 +173,6 @@ export default function App() {
       } catch (e: any) {
         if (cancelled) return;
 
-        // если таймаут, но кэш уже показали — не пугаем ошибкой
         if (e?.name === "AbortError" && hasFreshCache) {
           setLoading(false);
           setError("");
@@ -207,9 +205,7 @@ export default function App() {
   }, [products, activeCategory]);
 
   const cartItems = useMemo(() => Object.values(cart), [cart]);
-
   const cartCount = useMemo(() => cartItems.reduce((s, it) => s + it.qty, 0), [cartItems]);
-
   const total = useMemo(() => cartItems.reduce((s, it) => s + it.qty * it.product.price, 0), [cartItems]);
 
   const delivery = useMemo(() => {
@@ -274,9 +270,9 @@ export default function App() {
         qty: it.qty,
         sum: it.qty * it.product.price,
       })),
-      total,       // товары
-      delivery,    // доставка
-      grandTotal,  // итого
+      total,
+      delivery,
+      grandTotal,
     };
 
     try {
@@ -327,8 +323,9 @@ export default function App() {
         </div>
       )}
 
-      {/* Вариант B: карточка поверх фона */}
+      {/* Карточка поверх фона */}
       <div style={styles.container}>
+        {/* СДЕЛАЛИ header sticky, чтобы он “ездил” вместе */}
         <div style={styles.header}>
           <div style={styles.title}>Каталог</div>
 
@@ -392,7 +389,6 @@ export default function App() {
 
                         <div style={styles.cardBody}>
                           <div style={styles.cardName}>{p.name}</div>
-
                           {p.description ? <div style={styles.cardDesc}>{p.description}</div> : null}
 
                           <div style={styles.cardMeta}>
@@ -579,17 +575,23 @@ export default function App() {
           </>
         )}
       </div>
+
+      {/* ✅ ПЛАВАЮЩАЯ КОРЗИНА: всегда видна при скролле каталога */}
+      {tab === "catalog" && cartCount > 0 && (
+        <button style={styles.floatingCart} onClick={() => setTab("cart")}>
+          🛒 Корзина: {cartCount} • {money(grandTotal)} ₽
+        </button>
+      )}
     </div>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  // Вариант B: фон картинка + осветляющая вуаль
+  // фон
   page: {
     fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
     padding: 16,
     minHeight: "100vh",
-
     backgroundImage:
       "linear-gradient(rgba(255,255,255,0.55), rgba(255,255,255,0.85)), url('/images/bg-farm.png')",
     backgroundSize: "cover",
@@ -601,7 +603,7 @@ const styles: Record<string, React.CSSProperties> = {
   container: {
     maxWidth: 520,
     margin: "0 auto",
-    background: "rgba(255,255,255,0.88)",
+    background: "rgba(255,255,255,0.80)",
     borderRadius: 22,
     padding: 14,
     boxShadow: "0 20px 40px rgba(0,0,0,0.15)",
@@ -638,25 +640,37 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 4,
   },
 
+  // ✅ sticky header внутри карточки
   header: {
+    position: "sticky",
+    top: 0,
+    zIndex: 50,
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     gap: 10,
     marginBottom: 12,
+    padding: "10px 0",
+    background: "rgba(255,255,255,0.65)",
+    backdropFilter: "blur(8px)",
+    WebkitBackdropFilter: "blur(8px)",
+    borderBottom: "1px solid rgba(0,0,0,0.06)",
   },
+
   title: { fontSize: 34, fontWeight: 900, letterSpacing: -0.6 },
 
   tabs: { display: "flex", gap: 10 },
 
   tabBtn: {
     border: "1px solid rgba(0,0,0,0.10)",
-    background: "#ffffff",
+    background: "rgba(255,255,255,0.75)",
     padding: "10px 16px",
     borderRadius: 999,
     fontWeight: 900,
     cursor: "pointer",
     boxShadow: "0 8px 18px rgba(0,0,0,0.10)",
+    backdropFilter: "blur(8px)",
+    WebkitBackdropFilter: "blur(8px)",
   },
   tabActive: {
     borderColor: "rgba(31,122,31,0.22)",
@@ -675,13 +689,15 @@ const styles: Record<string, React.CSSProperties> = {
 
   chip: {
     border: "1px solid rgba(0,0,0,0.10)",
-    background: "#fff",
+    background: "rgba(255,255,255,0.70)",
     padding: "9px 12px",
     borderRadius: 999,
     fontWeight: 900,
     cursor: "pointer",
     whiteSpace: "nowrap",
     boxShadow: "0 8px 18px rgba(0,0,0,0.08)",
+    backdropFilter: "blur(8px)",
+    WebkitBackdropFilter: "blur(8px)",
   },
   chipActive: {
     background: "linear-gradient(180deg, rgba(47,188,47,0.95) 0%, rgba(31,122,31,0.98) 100%)",
@@ -695,26 +711,34 @@ const styles: Record<string, React.CSSProperties> = {
 
   list: { display: "grid", gap: 12 },
 
+  // ✅ СДЕЛАЛИ КАРТОЧКИ ТОВАРОВ ПОЛУПРОЗРАЧНЫМИ
   card: {
-    background: "#fff",
+    background: "rgba(255,255,255,0.72)",
     borderRadius: 18,
     overflow: "hidden",
     boxShadow: "0 12px 26px rgba(0,0,0,0.10)",
     border: "1px solid rgba(0,0,0,0.08)",
     display: "grid",
     gridTemplateColumns: "120px 1fr",
+    backdropFilter: "blur(8px)",
+    WebkitBackdropFilter: "blur(8px)",
   },
+
   cardImg: { width: 120, height: 120, objectFit: "cover", display: "block" },
+
   cardImgPlaceholder: {
     width: 120,
     height: 120,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    background: "linear-gradient(180deg, rgba(233,234,236,1) 0%, rgba(225,226,228,1) 100%)",
+    background: "rgba(233,234,236,0.75)",
     color: "#666",
     fontWeight: 800,
+    backdropFilter: "blur(8px)",
+    WebkitBackdropFilter: "blur(8px)",
   },
+
   cardBody: { padding: 12, display: "flex", flexDirection: "column", gap: 8 },
   cardName: { fontSize: 18, fontWeight: 900, lineHeight: 1.15 },
   cardDesc: { fontSize: 13, color: "#333", lineHeight: 1.25 },
@@ -736,11 +760,13 @@ const styles: Record<string, React.CSSProperties> = {
   qtyInline: { display: "flex", alignItems: "center", gap: 8, marginTop: 6 },
 
   panel: {
-    background: "#fff",
+    background: "rgba(255,255,255,0.80)",
     borderRadius: 18,
     padding: 14,
     boxShadow: "0 12px 26px rgba(0,0,0,0.10)",
     border: "1px solid rgba(0,0,0,0.08)",
+    backdropFilter: "blur(8px)",
+    WebkitBackdropFilter: "blur(8px)",
   },
 
   cartRow: {
@@ -759,10 +785,12 @@ const styles: Record<string, React.CSSProperties> = {
     height: 36,
     borderRadius: 12,
     border: "1px solid rgba(0,0,0,0.12)",
-    background: "#fff",
+    background: "rgba(255,255,255,0.78)",
     fontSize: 18,
     cursor: "pointer",
     boxShadow: "0 10px 20px rgba(0,0,0,0.10)",
+    backdropFilter: "blur(8px)",
+    WebkitBackdropFilter: "blur(8px)",
   },
   qtyNum: { minWidth: 24, textAlign: "center", fontWeight: 900 },
 
@@ -770,12 +798,14 @@ const styles: Record<string, React.CSSProperties> = {
 
   removeBtn: {
     border: "1px solid rgba(0,0,0,0.12)",
-    background: "#fff",
+    background: "rgba(255,255,255,0.78)",
     borderRadius: 12,
     fontSize: 16,
     cursor: "pointer",
     padding: "6px 10px",
     boxShadow: "0 10px 18px rgba(0,0,0,0.08)",
+    backdropFilter: "blur(8px)",
+    WebkitBackdropFilter: "blur(8px)",
   },
 
   totalBlock: {
@@ -831,9 +861,11 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1px solid rgba(0,0,0,0.12)",
     marginTop: 6,
     fontSize: 14,
-    background: "#fff",
+    background: "rgba(255,255,255,0.85)",
     outline: "none",
     boxShadow: "0 10px 18px rgba(0,0,0,0.06)",
+    backdropFilter: "blur(8px)",
+    WebkitBackdropFilter: "blur(8px)",
   },
 
   primaryBtn: {
@@ -851,7 +883,7 @@ const styles: Record<string, React.CSSProperties> = {
   secondaryBtn: {
     width: "100%",
     marginTop: 10,
-    background: "#fff",
+    background: "rgba(255,255,255,0.82)",
     color: "#111",
     border: "1px solid rgba(0,0,0,0.12)",
     borderRadius: 16,
@@ -859,7 +891,29 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 900,
     cursor: "pointer",
     boxShadow: "0 10px 22px rgba(0,0,0,0.08)",
+    backdropFilter: "blur(8px)",
+    WebkitBackdropFilter: "blur(8px)",
   },
 
   note: { marginTop: 10, fontSize: 12, color: "#555" },
+
+  // ✅ Плавающая кнопка корзины (ездит при скролле)
+  floatingCart: {
+    position: "fixed",
+    left: "50%",
+    transform: "translateX(-50%)",
+    bottom: 16,
+    zIndex: 9999,
+    maxWidth: 520,
+    width: "calc(100% - 32px)",
+    border: "1px solid rgba(0,0,0,0.12)",
+    background: "rgba(255,255,255,0.85)",
+    borderRadius: 999,
+    padding: "12px 14px",
+    fontWeight: 950,
+    cursor: "pointer",
+    boxShadow: "0 18px 38px rgba(0,0,0,0.18)",
+    backdropFilter: "blur(10px)",
+    WebkitBackdropFilter: "blur(10px)",
+  },
 };
