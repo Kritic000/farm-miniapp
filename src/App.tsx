@@ -988,7 +988,7 @@ const styles: Record<string, React.CSSProperties> & {
     height: 42,              // ✅ как у кнопок
     display: "flex",         // ✅
     alignItems: "center",    // ✅ вертикально по центру
-    marginLeft: 8,   // ← попробуй 4–8
+    marginLeft: 15,   // ← попробуй 4–8
   },
 
   navBtn: {
@@ -1437,6 +1437,7 @@ const styles: Record<string, React.CSSProperties> & {
     fontWeight: 650,
   },
 };
+
 
 
 
