@@ -389,7 +389,10 @@ export default function App() {
                           {p.description ? <div style={styles.cardDesc}>{p.description}</div> : null}
 
                           <div style={styles.cardMeta}>
+                            <span style={{ color: "#2a9d8f" }}>
                             {money(p.price)} ₽ / {p.unit}
+                              </span>{" "}
+                            / {p.unit}
                           </div>
 
                           {q === 0 ? (
@@ -761,7 +764,7 @@ const styles: Record<string, React.CSSProperties> & {
   cardBody: { padding: 12, display: "flex", flexDirection: "column", gap: 8 },
   cardName: { fontSize: 18, fontWeight: 950, lineHeight: 1.15, color: "#264653" },
   cardDesc: { fontSize: 13, color: "rgba(38,70,83,0.90)", lineHeight: 1.25, fontWeight: 700 },
-  cardMeta: { color: "#e9c46a", fontWeight: 950 },
+  cardMeta: { color: "#111111", fontWeight: 950 },
 
   buyBtn: {
     marginTop: 6,
@@ -945,6 +948,7 @@ const styles: Record<string, React.CSSProperties> & {
     WebkitBackdropFilter: "blur(10px)",
   },
 };
+
 
 
 
