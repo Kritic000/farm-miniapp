@@ -900,15 +900,15 @@ backgroundAttachment: "fixed",// ← самое главное
 
   // ✅ Описание всегда максимум 2 строки (чтобы размер был одинаковый)
   cardDesc: {
-    fontSize: 12,
-    color: "rgba(38,70,83,0.80)",
-    lineHeight: 1.2,
-    fontWeight: 450,
-    display: "-webkit-box",
-    WebkitLineClamp: 2,
-    WebkitBoxOrient: "vertical",
-    overflow: "hidden",
-  },
+  fontSize: 12,
+  color: "rgba(38,70,83,0.80)",
+  lineHeight: 1.2,
+  fontWeight: 450,
+  display: "-webkit-box",
+  WebkitLineClamp: 4,       // ✅ было 2 → стало 4
+  WebkitBoxOrient: "vertical",
+  overflow: "hidden",
+},
 
   cardMeta: { fontWeight: 550 },
 
@@ -1111,6 +1111,7 @@ backgroundAttachment: "fixed",// ← самое главное
     boxShadow: "0 16px 32px rgba(38,70,83,0.18)",
   },
 };
+
 
 
 
