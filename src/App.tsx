@@ -24,6 +24,26 @@ type TgUser = {
   last_name?: string;
 };
 
+type OrderItem = {
+  id?: string;
+  name: string;
+  unit?: string;
+  price: number;
+  qty: number;
+  sum: number;
+};
+
+type Order = {
+  createdAt: string;
+  status: string;
+  name?: string;
+  phone?: string;
+  total: number;
+  delivery: number;
+  grandTotal: number;
+  items: OrderItem[];
+};
+
 function getTgUser(): TgUser | null {
   const w = window as any;
   const tg = w?.Telegram?.WebApp;
@@ -35,10 +55,39 @@ function money(n: number) {
   return new Intl.NumberFormat("ru-RU").format(Math.round(n));
 }
 
+function normalizePhone(p: string) {
+  return (p || "").replace(/\D+/g, "");
+}
+
+function formatDate(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(d);
+}
+
+function humanStatus(s: string) {
+  const v = String(s || "").toLowerCase();
+  if (v === "new") return "Новый";
+  if (v === "accepted") return "Принят";
+  if (v === "cooking" || v === "in_work") return "В работе";
+  if (v === "delivering") return "Доставляется";
+  if (v === "done" || v === "completed") return "Выполнен";
+  if (v === "canceled" || v === "cancelled") return "Отменён";
+  return s || "—";
+}
+
 type Toast = { type: "error" | "success" | "info"; text: string } | null;
 
 const PRODUCTS_CACHE_KEY = "farm_products_cache_v1";
 const PRODUCTS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 минут
+
+const LAST_PHONE_KEY = "farm_last_phone_v1";
 
 const DELIVERY_FEE = 200;
 const FREE_DELIVERY_FROM = 2000;
@@ -64,10 +113,20 @@ function saveProductsCache(products: Product[]) {
   } catch {}
 }
 
-// нормализуем путь картинки из таблицы:
-// - "public/images/xxx.jpg" -> "/images/xxx.jpg"
-// - "/images/xxx.jpg" -> "/images/xxx.jpg"
-// - "images/xxx.jpg" -> "/images/xxx.jpg"
+function loadLastPhone(): string {
+  try {
+    return localStorage.getItem(LAST_PHONE_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function saveLastPhone(phone: string) {
+  try {
+    localStorage.setItem(LAST_PHONE_KEY, phone);
+  } catch {}
+}
+
 function normalizeImagePath(img?: string): string | undefined {
   const s = String(img || "").trim();
   if (!s) return undefined;
@@ -77,7 +136,6 @@ function normalizeImagePath(img?: string): string | undefined {
   return "/" + s;
 }
 
-// fetch с таймаутом (Apps Script может “просыпаться” долго)
 async function fetchWithTimeout(
   input: RequestInfo,
   init: RequestInit & { timeoutMs?: number } = {}
@@ -94,7 +152,6 @@ async function fetchWithTimeout(
 }
 
 export default function App() {
-  // === ВАЖНО: токен должен совпадать с API_TOKEN в Apps Script ===
   const API_TOKEN = "Kjhytccb18@";
 
   const [loading, setLoading] = useState(true);
@@ -104,7 +161,9 @@ export default function App() {
 
   const [products, setProducts] = useState<Product[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>("Все");
-  const [tab, setTab] = useState<"catalog" | "cart" | "checkout">("catalog");
+  const [tab, setTab] = useState<"catalog" | "cart" | "checkout" | "orders">(
+    "catalog"
+  );
 
   const [cart, setCart] = useState<Record<string, CartItem>>({});
 
@@ -112,9 +171,14 @@ export default function App() {
   const [comment, setComment] = useState("");
 
   const [customerName, setCustomerName] = useState("");
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState(() => loadLastPhone());
 
   const [sending, setSending] = useState(false);
+
+  // orders
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [ordersError, setOrdersError] = useState("");
+  const [orders, setOrders] = useState<Order[]>([]);
 
   // Telegram init
   useEffect(() => {
@@ -134,6 +198,12 @@ export default function App() {
     const t = setTimeout(() => setToast(null), 2500);
     return () => clearTimeout(t);
   }, [toast]);
+
+  // сохраняем телефон (чтобы "Мои заказы" могли работать даже если tg id недоступен)
+  useEffect(() => {
+    const p = phone.trim();
+    if (p.length >= 6) saveLastPhone(p);
+  }, [phone]);
 
   // Быстрая загрузка ассортимента: сначала кэш, потом сеть
   useEffect(() => {
@@ -182,7 +252,6 @@ export default function App() {
       } catch (e: any) {
         if (cancelled) return;
 
-        // если таймаут, но есть свежий кэш — показываем кэш без ошибки
         if (e?.name === "AbortError" && hasFreshCache) {
           setLoading(false);
           setError("");
@@ -320,7 +389,7 @@ export default function App() {
       setAddress("");
       setComment("");
       setCustomerName("");
-      setPhone("");
+      // телефон оставляем
       setTab("catalog");
     } catch (e: any) {
       setToast({
@@ -331,6 +400,54 @@ export default function App() {
       setSending(false);
     }
   }
+
+  async function loadMyOrders() {
+    const tg = getTgUser();
+    const tgUserId = tg?.id ? String(tg.id) : "";
+    const phoneDigits = normalizePhone(phone);
+
+    // если нет ни tgUserId, ни телефона — не грузим
+    if (!tgUserId && phoneDigits.length < 6) {
+      setOrders([]);
+      setOrdersError(
+        "Чтобы показать заказы, открой приложение из Telegram или укажи телефон (в оформлении)."
+      );
+      return;
+    }
+
+    try {
+      setOrdersLoading(true);
+      setOrdersError("");
+
+      const url =
+        `${API_URL}?action=orders` +
+        `&token=${encodeURIComponent(API_TOKEN)}` +
+        `&tgUserId=${encodeURIComponent(tgUserId)}` +
+        `&phone=${encodeURIComponent(phoneDigits)}` +
+        `&limit=30` +
+        `&ts=${Date.now()}`;
+
+      const res = await fetchWithTimeout(url, { method: "GET", timeoutMs: 25000 });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      if (data?.error) throw new Error(data.error);
+
+      const list: Order[] = Array.isArray(data.orders) ? data.orders : [];
+      setOrders(list);
+    } catch (e: any) {
+      setOrdersError(e?.message || "Не удалось загрузить заказы");
+    } finally {
+      setOrdersLoading(false);
+    }
+  }
+
+  // когда открыли вкладку orders — подгружаем
+  useEffect(() => {
+    if (tab !== "orders") return;
+    loadMyOrders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
   return (
     <div style={styles.page}>
@@ -351,7 +468,6 @@ export default function App() {
       )}
 
       <div style={styles.container}>
-        {/* Шапка НЕ sticky — будет сверху и уйдёт при скролле */}
         <div style={styles.header}>
           <div style={styles.title}>FarmShop</div>
 
@@ -369,13 +485,21 @@ export default function App() {
             <button
               style={{
                 ...styles.tabBtn,
-                ...(tab === "cart" || tab === "checkout"
-                  ? styles.tabActive
-                  : {}),
+                ...(tab === "cart" || tab === "checkout" ? styles.tabActive : {}),
               }}
               onClick={() => setTab("cart")}
             >
               🛒 Корзина ({cartCount})
+            </button>
+
+            <button
+              style={{
+                ...styles.tabBtn,
+                ...(tab === "orders" ? styles.tabActive : {}),
+              }}
+              onClick={() => setTab("orders")}
+            >
+              📦 Заказы
             </button>
           </div>
         </div>
@@ -497,18 +621,14 @@ export default function App() {
                         <div style={styles.qtyBox}>
                           <button
                             style={styles.qtyBtn}
-                            onClick={() =>
-                              setQty(it.product.id, it.qty - 1)
-                            }
+                            onClick={() => setQty(it.product.id, it.qty - 1)}
                           >
                             −
                           </button>
                           <div style={styles.qtyNum}>{it.qty}</div>
                           <button
                             style={styles.qtyBtn}
-                            onClick={() =>
-                              setQty(it.product.id, it.qty + 1)
-                            }
+                            onClick={() => setQty(it.product.id, it.qty + 1)}
                           >
                             +
                           </button>
@@ -671,11 +791,88 @@ export default function App() {
                 </div>
               </div>
             )}
+
+            {tab === "orders" && (
+              <div style={styles.panel}>
+                <div style={styles.ordersHeader}>
+                  <div style={styles.h2}>Мои заказы</div>
+                  <button
+                    style={styles.refreshBtn}
+                    onClick={loadMyOrders}
+                    disabled={ordersLoading}
+                    title="Обновить"
+                  >
+                    {ordersLoading ? "Обновляем…" : "↻"}
+                  </button>
+                </div>
+
+                {ordersError ? (
+                  <div style={{ ...styles.info, color: styles.colors.danger }}>
+                    {ordersError}
+                  </div>
+                ) : null}
+
+                {ordersLoading && !orders.length ? (
+                  <div style={styles.info}>Загружаем заказы…</div>
+                ) : null}
+
+                {!ordersLoading && !ordersError && orders.length === 0 ? (
+                  <div style={styles.infoMuted}>
+                    Заказов пока нет. Оформи первый заказ — и он появится здесь.
+                  </div>
+                ) : null}
+
+                <div style={styles.ordersList}>
+                  {orders.map((o, idx) => (
+                    <div key={idx} style={styles.orderCard}>
+                      <div style={styles.orderTop}>
+                        <div style={styles.orderDate}>{formatDate(o.createdAt)}</div>
+                        <div style={styles.orderStatus}>{humanStatus(o.status)}</div>
+                      </div>
+
+                      <div style={styles.orderTotals}>
+                        <div style={styles.orderRow}>
+                          <div>Товары</div>
+                          <div style={{ fontWeight: 700 }}>{money(o.total)} ₽</div>
+                        </div>
+                        <div style={styles.orderRow}>
+                          <div>Доставка</div>
+                          <div style={{ fontWeight: 700 }}>{money(o.delivery)} ₽</div>
+                        </div>
+                        <div style={styles.orderRowBig}>
+                          <div>Итого</div>
+                          <div style={{ fontWeight: 800 }}>{money(o.grandTotal)} ₽</div>
+                        </div>
+                      </div>
+
+                      <div style={styles.orderItems}>
+                        {Array.isArray(o.items) &&
+                          o.items.slice(0, 20).map((it, j) => (
+                            <div key={j} style={styles.orderItemRow}>
+                              <div style={styles.orderItemName} title={it.name}>
+                                {it.name}
+                              </div>
+                              <div style={styles.orderItemQty}>×{it.qty}</div>
+                              <div style={styles.orderItemSum}>
+                                {money(it.sum)} ₽
+                              </div>
+                            </div>
+                          ))}
+                        {Array.isArray(o.items) && o.items.length > 20 ? (
+                          <div style={styles.infoMuted}>
+                            Показаны первые 20 позиций…
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
 
-      {/* ✅ Плавающая корзина ВОЗВРАЩЕНА */}
       {tab === "catalog" && cartCount > 0 && (
         <button style={styles.floatingCart} onClick={() => setTab("cart")}>
           🛒 {cartCount} • {money(grandTotal)} ₽
@@ -706,20 +903,19 @@ const styles: Record<string, React.CSSProperties> & {
   },
 
   page: {
-  fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
-  padding: 16,
-  minHeight: "100vh",
-  boxSizing: "border-box",
-  color: "#264653",
-
-  backgroundImage:
-  "linear-gradient(rgba(255,255,255,0.30), rgba(255,255,255,0.50)), url('/images/bg-farm.png')",
-backgroundRepeat: "no-repeat",
-backgroundPosition: "center top",
-backgroundSize: "cover",
-backgroundAttachment: "fixed",// ← самое главное
+    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
+    padding: 16,
     minHeight: "100vh",
-},
+    boxSizing: "border-box",
+    color: "#264653",
+
+    backgroundImage:
+      "linear-gradient(rgba(255,255,255,0.30), rgba(255,255,255,0.50)), url('/images/bg-farm.png')",
+    backgroundRepeat: "no-repeat",
+    backgroundPosition: "center top",
+    backgroundSize: "cover",
+    backgroundAttachment: "fixed",
+  },
 
   container: {
     maxWidth: 520,
@@ -767,7 +963,6 @@ backgroundAttachment: "fixed",// ← самое главное
     color: "#264653",
   },
 
-  // ✅ НЕ sticky — чтобы не “ехало” за скроллом
   header: {
     display: "flex",
     alignItems: "center",
@@ -786,20 +981,19 @@ backgroundAttachment: "fixed",// ← самое главное
     color: "#264653",
   },
 
-  tabs: { display: "flex", gap: 10 },
+  tabs: { display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" },
 
   tabBtn: {
     border: "1px solid rgba(38,70,83,0.18)",
     background: "rgba(255,255,255,0.78)",
-    padding: "10px 16px",
+    padding: "10px 14px",
     borderRadius: 999,
     fontWeight: 650,
     cursor: "pointer",
     boxShadow: "0 6px 14px rgba(38,70,83,0.12)",
     color: "#264653",
-    backdropFilter: "blur(10px)",
-    WebkitBackdropFilter: "blur(10px)",
     boxSizing: "border-box",
+    whiteSpace: "nowrap",
   },
   tabActive: {
     borderColor: "rgba(42,157,143,0.35)",
@@ -842,11 +1036,6 @@ backgroundAttachment: "fixed",// ← самое главное
 
   list: { display: "grid", gap: 12 },
 
-  /**
-   * ✅ ВАЖНОЕ: одинаковый “размер карточки” как в “Курица”
-   * - фиксируем высоту картинки слева
-   * - ограничиваем описание (2 строки), чтобы карточка не раздувалась
-   */
   card: {
     background: "rgba(255,255,255,0.55)",
     borderRadius: 18,
@@ -855,9 +1044,8 @@ backgroundAttachment: "fixed",// ← самое главное
     border: "1px solid rgba(38,70,83,0.10)",
     display: "grid",
     gridTemplateColumns: "110px 1fr",
-    minHeight: 108,
+    alignItems: "start",
     boxSizing: "border-box",
-    minHeight: 130,
   },
 
   cardImg: {
@@ -865,6 +1053,7 @@ backgroundAttachment: "fixed",// ← самое главное
     height: 108,
     objectFit: "cover",
     display: "block",
+    alignSelf: "start",
   },
 
   cardImgPlaceholder: {
@@ -877,6 +1066,7 @@ backgroundAttachment: "fixed",// ← самое главное
     color: "#264653",
     fontWeight: 650,
     boxSizing: "border-box",
+    alignSelf: "start",
   },
 
   cardBody: {
@@ -884,7 +1074,6 @@ backgroundAttachment: "fixed",// ← самое главное
     display: "flex",
     flexDirection: "column",
     gap: 6,
-    justifyContent: "center",
     boxSizing: "border-box",
   },
 
@@ -899,17 +1088,17 @@ backgroundAttachment: "fixed",// ← самое главное
     overflow: "hidden",
   },
 
-  // ✅ Описание всегда максимум 2 строки (чтобы размер был одинаковый)
+  // 5 строк описания
   cardDesc: {
-  fontSize: 12,
-  color: "rgba(38,70,83,0.80)",
-  lineHeight: 1.2,
-  fontWeight: 450,
-  display: "-webkit-box",
-  WebkitLineClamp: 5,       // ✅ было 2 → стало 4
-  WebkitBoxOrient: "vertical",
-  overflow: "hidden",
-},
+    fontSize: 12,
+    color: "rgba(38,70,83,0.80)",
+    lineHeight: 1.25,
+    fontWeight: 450,
+    display: "-webkit-box",
+    WebkitLineClamp: 5,
+    WebkitBoxOrient: "vertical",
+    overflow: "hidden",
+  },
 
   cardMeta: { fontWeight: 550 },
 
@@ -933,21 +1122,6 @@ backgroundAttachment: "fixed",// ← самое главное
 
   qtyInline: { display: "flex", alignItems: "center", gap: 8, marginTop: 4 },
 
-  qtyBox: { display: "flex", alignItems: "center", gap: 6 },
-  qtyBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    border: "1px solid rgba(38,70,83,0.16)",
-    background: "rgba(255,255,255,0.82)",
-    fontSize: 18,
-    cursor: "pointer",
-    boxShadow: "0 8px 16px rgba(38,70,83,0.10)",
-    color: "#264653",
-    boxSizing: "border-box",
-  },
-  qtyNum: { minWidth: 24, textAlign: "center", fontWeight: 650, color: "#264653" },
-
   panel: {
     background: "rgba(255,255,255,0.80)",
     borderRadius: 18,
@@ -966,6 +1140,26 @@ backgroundAttachment: "fixed",// ← самое главное
   },
   cartName: { fontWeight: 650, color: "#264653" },
   cartMeta: { color: "rgba(38,70,83,0.80)", fontWeight: 450, fontSize: 13 },
+
+  qtyBox: { display: "flex", alignItems: "center", gap: 6 },
+  qtyBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    border: "1px solid rgba(38,70,83,0.16)",
+    background: "rgba(255,255,255,0.82)",
+    fontSize: 18,
+    cursor: "pointer",
+    boxShadow: "0 8px 16px rgba(38,70,83,0.10)",
+    color: "#264653",
+    boxSizing: "border-box",
+  },
+  qtyNum: {
+    minWidth: 24,
+    textAlign: "center",
+    fontWeight: 650,
+    color: "#264653",
+  },
 
   cartSum: { width: 90, textAlign: "right", fontWeight: 650, color: "#264653" },
 
@@ -1091,7 +1285,6 @@ backgroundAttachment: "fixed",// ← самое главное
     fontWeight: 450,
   },
 
-  // ✅ Плавающая корзина (fixed)
   floatingCart: {
     position: "fixed",
     left: "50%",
@@ -1111,10 +1304,114 @@ backgroundAttachment: "fixed",// ← самое главное
     cursor: "pointer",
     boxShadow: "0 16px 32px rgba(38,70,83,0.18)",
   },
+
+  // orders UI
+  ordersHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    marginBottom: 6,
+  },
+
+  refreshBtn: {
+    border: "1px solid rgba(38,70,83,0.16)",
+    background: "rgba(255,255,255,0.85)",
+    borderRadius: 12,
+    padding: "8px 10px",
+    cursor: "pointer",
+    fontWeight: 700,
+    boxShadow: "0 8px 14px rgba(38,70,83,0.08)",
+  },
+
+  ordersList: {
+    display: "grid",
+    gap: 10,
+    marginTop: 10,
+  },
+
+  orderCard: {
+    background: "rgba(255,255,255,0.70)",
+    border: "1px solid rgba(38,70,83,0.10)",
+    borderRadius: 16,
+    padding: 12,
+    boxShadow: "0 10px 18px rgba(38,70,83,0.10)",
+  },
+
+  orderTop: {
+    display: "flex",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    gap: 10,
+    marginBottom: 8,
+  },
+
+  orderDate: {
+    fontWeight: 650,
+    color: "#264653",
+  },
+
+  orderStatus: {
+    fontWeight: 650,
+    color: "rgba(38,70,83,0.85)",
+  },
+
+  orderTotals: {
+    display: "grid",
+    gap: 6,
+    paddingBottom: 8,
+    borderBottom: "1px solid rgba(38,70,83,0.10)",
+    marginBottom: 8,
+  },
+
+  orderRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    fontSize: 14,
+    color: "#264653",
+  },
+
+  orderRowBig: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    fontSize: 15,
+    color: "#264653",
+    paddingTop: 6,
+    marginTop: 2,
+    borderTop: "1px dashed rgba(38,70,83,0.20)",
+  },
+
+  orderItems: {
+    display: "grid",
+    gap: 6,
+  },
+
+  orderItemRow: {
+    display: "grid",
+    gridTemplateColumns: "1fr auto auto",
+    gap: 8,
+    alignItems: "baseline",
+  },
+
+  orderItemName: {
+    fontSize: 13,
+    color: "rgba(38,70,83,0.90)",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+
+  orderItemQty: {
+    fontSize: 13,
+    color: "rgba(38,70,83,0.75)",
+    fontWeight: 600,
+  },
+
+  orderItemSum: {
+    fontSize: 13,
+    color: "#264653",
+    fontWeight: 650,
+  },
 };
-
-
-
-
-
-
