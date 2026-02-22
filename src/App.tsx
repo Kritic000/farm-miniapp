@@ -511,7 +511,7 @@ export default function App() {
               }}
               onClick={() => setTab("orders")}
             >
-              📦 Заказы
+              📦 Мои заказы
             </button>
           </div>
         </div>
@@ -1436,6 +1436,7 @@ const styles: Record<string, React.CSSProperties> & {
     fontWeight: 650,
   },
 };
+
 
 
 
