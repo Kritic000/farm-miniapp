@@ -38,7 +38,7 @@ function money(n: number) {
 type Toast = { type: "error" | "success" | "info"; text: string } | null;
 
 const PRODUCTS_CACHE_KEY = "farm_products_cache_v1";
-const PRODUCTS_CACHE_TTL_MS = 10 * 60 * 1000;
+const PRODUCTS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 минут
 
 const DELIVERY_FEE = 200;
 const FREE_DELIVERY_FROM = 2000;
@@ -57,10 +57,17 @@ function loadProductsCache(): { ts: number; products: Product[] } | null {
 
 function saveProductsCache(products: Product[]) {
   try {
-    localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), products }));
+    localStorage.setItem(
+      PRODUCTS_CACHE_KEY,
+      JSON.stringify({ ts: Date.now(), products })
+    );
   } catch {}
 }
 
+// нормализуем путь картинки из таблицы:
+// - "public/images/xxx.jpg" -> "/images/xxx.jpg"
+// - "/images/xxx.jpg" -> "/images/xxx.jpg"
+// - "images/xxx.jpg" -> "/images/xxx.jpg"
 function normalizeImagePath(img?: string): string | undefined {
   const s = String(img || "").trim();
   if (!s) return undefined;
@@ -70,11 +77,12 @@ function normalizeImagePath(img?: string): string | undefined {
   return "/" + s;
 }
 
+// fetch с таймаутом (Apps Script может “просыпаться” долго)
 async function fetchWithTimeout(
   input: RequestInfo,
   init: RequestInit & { timeoutMs?: number } = {}
 ) {
-  const { timeoutMs = 25000, ...rest } = init;
+  const { timeoutMs = 25000, ...rest } = init; // 25 секунд
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -86,6 +94,7 @@ async function fetchWithTimeout(
 }
 
 export default function App() {
+  // === ВАЖНО: токен должен совпадать с API_TOKEN в Apps Script ===
   const API_TOKEN = "Kjhytccb18@";
 
   const [loading, setLoading] = useState(true);
@@ -102,11 +111,13 @@ export default function App() {
   const [address, setAddress] = useState("");
   const [comment, setComment] = useState("");
 
+  // поля клиента
   const [customerName, setCustomerName] = useState("");
   const [phone, setPhone] = useState("");
 
   const [sending, setSending] = useState(false);
 
+  // Telegram init
   useEffect(() => {
     const w = window as any;
     const tg = w?.Telegram?.WebApp;
@@ -118,32 +129,41 @@ export default function App() {
     }
   }, []);
 
+  // Автозакрытие toast
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 2500);
     return () => clearTimeout(t);
   }, [toast]);
 
+  // Быстрая загрузка ассортимента: сначала кэш, потом сеть
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
       const cached = loadProductsCache();
-      const hasFreshCache = !!(cached && Date.now() - cached.ts < PRODUCTS_CACHE_TTL_MS);
+      const hasFreshCache = !!(
+        cached && Date.now() - cached.ts < PRODUCTS_CACHE_TTL_MS
+      );
 
       try {
         setLoading(true);
         setError("");
         setLoadingHint("");
 
+        // 1) показать кэш мгновенно
         if (hasFreshCache && cached) {
           setProducts(cached.products);
           setLoading(false);
           setLoadingHint("Обновляем ассортимент…");
         }
 
+        // 2) подтянуть с сервера
         const url = `${API_URL}?action=products&ts=${Date.now()}`;
-        const res = await fetchWithTimeout(url, { method: "GET", timeoutMs: 25000 });
+        const res = await fetchWithTimeout(url, {
+          method: "GET",
+          timeoutMs: 25000,
+        });
         const data = await res.json();
 
         if (data?.error) throw new Error(data.error);
@@ -166,11 +186,14 @@ export default function App() {
         if (e?.name === "AbortError" && hasFreshCache) {
           setLoading(false);
           setError("");
-          setLoadingHint("Сервер отвечает медленно. Показан сохранённый ассортимент.");
+          setLoadingHint(
+            "Сервер отвечает медленно. Показан сохранённый ассортимент."
+          );
           return;
         }
 
-        if (e?.name === "AbortError") setError("Сервер долго отвечает. Попробуйте ещё раз.");
+        if (e?.name === "AbortError")
+          setError("Сервер долго отвечает. Попробуйте ещё раз.");
         else setError(e?.message || "Ошибка загрузки товаров");
 
         setLoading(false);
@@ -195,8 +218,16 @@ export default function App() {
   }, [products, activeCategory]);
 
   const cartItems = useMemo(() => Object.values(cart), [cart]);
-  const cartCount = useMemo(() => cartItems.reduce((s, it) => s + it.qty, 0), [cartItems]);
-  const total = useMemo(() => cartItems.reduce((s, it) => s + it.qty * it.product.price, 0), [cartItems]);
+
+  const cartCount = useMemo(
+    () => cartItems.reduce((s, it) => s + it.qty, 0),
+    [cartItems]
+  );
+
+  const total = useMemo(
+    () => cartItems.reduce((s, it) => s + it.qty * it.product.price, 0),
+    [cartItems]
+  );
 
   const delivery = useMemo(() => {
     if (total <= 0) return 0;
@@ -231,7 +262,8 @@ export default function App() {
   function validateCheckout(): string | null {
     if (customerName.trim().length < 2) return "Укажи имя (минимум 2 символа).";
     if (phone.trim().length < 6) return "Укажи телефон (минимум 6 символов).";
-    if (address.trim().length < 5) return "Укажи адрес доставки (минимум 5 символов).";
+    if (address.trim().length < 5)
+      return "Укажи адрес доставки (минимум 5 символов).";
     if (cartItems.length === 0) return "Корзина пустая.";
     return null;
   }
@@ -279,7 +311,10 @@ export default function App() {
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
       if (data?.error) throw new Error(data.error);
 
-      setToast({ type: "success", text: "✅ Заказ отправлен! Мы свяжемся для подтверждения." });
+      setToast({
+        type: "success",
+        text: "✅ Заказ отправлен! Мы свяжемся для подтверждения.",
+      });
 
       setCart({});
       setAddress("");
@@ -288,7 +323,10 @@ export default function App() {
       setPhone("");
       setTab("catalog");
     } catch (e: any) {
-      setToast({ type: "error", text: `Не удалось отправить заказ: ${e?.message || "Ошибка"}` });
+      setToast({
+        type: "error",
+        text: `Не удалось отправить заказ: ${e?.message || "Ошибка"}`,
+      });
     } finally {
       setSending(false);
     }
@@ -313,20 +351,28 @@ export default function App() {
       )}
 
       <div style={styles.container}>
-        {/* ✅ Минималистичная шапка: без плашки */}
+        {/* Минималистичная шапка */}
         <div style={styles.header}>
           <div style={styles.title}>Нашенское</div>
 
           <div style={styles.tabs}>
             <button
-              style={{ ...styles.tabBtn, ...(tab === "catalog" ? styles.tabActive : {}) }}
+              style={{
+                ...styles.tabBtn,
+                ...(tab === "catalog" ? styles.tabActive : {}),
+              }}
               onClick={() => setTab("catalog")}
             >
               Товары
             </button>
 
             <button
-              style={{ ...styles.tabBtn, ...(tab === "cart" || tab === "checkout" ? styles.tabActive : {}) }}
+              style={{
+                ...styles.tabBtn,
+                ...(tab === "cart" || tab === "checkout"
+                  ? styles.tabActive
+                  : {}),
+              }}
               onClick={() => setTab("cart")}
             >
               🛒 Корзина ({cartCount})
@@ -335,7 +381,9 @@ export default function App() {
         </div>
 
         {loading && <div style={styles.info}>Загрузка ассортимента…</div>}
-        {!loading && loadingHint && <div style={styles.infoMuted}>{loadingHint}</div>}
+        {!loading && loadingHint && (
+          <div style={styles.infoMuted}>{loadingHint}</div>
+        )}
         {error && <div style={{ ...styles.info, color: styles.colors.danger }}>{error}</div>}
 
         {!loading && !error && (
@@ -346,7 +394,10 @@ export default function App() {
                   {categories.map((c) => (
                     <button
                       key={c}
-                      style={{ ...styles.chip, ...(activeCategory === c ? styles.chipActive : {}) }}
+                      style={{
+                        ...styles.chip,
+                        ...(activeCategory === c ? styles.chipActive : {}),
+                      }}
                       onClick={() => setActiveCategory(c)}
                     >
                       {c}
@@ -368,7 +419,8 @@ export default function App() {
                             loading="lazy"
                             decoding="async"
                             onError={(e) => {
-                              (e.currentTarget as HTMLImageElement).style.display = "none";
+                              (e.currentTarget as HTMLImageElement).style.display =
+                                "none";
                             }}
                           />
                         ) : (
@@ -377,30 +429,52 @@ export default function App() {
 
                         <div style={styles.cardBody}>
                           <div style={styles.cardName}>{p.name}</div>
-                          {p.description ? <div style={styles.cardDesc}>{p.description}</div> : null}
+                          {p.description ? (
+                            <div style={styles.cardDesc}>{p.description}</div>
+                          ) : null}
 
-                          {/* ✅ Цена: цветная только сумма */}
+                          {/* Цена: цветная только сумма */}
                           <div style={styles.cardMeta}>
-                            <span style={{ color: styles.colors.primary, fontWeight: 950 }}>
+                            <span
+                              style={{
+                                color: styles.colors.primary,
+                                fontWeight: 950,
+                              }}
+                            >
                               {money(p.price)} ₽
                             </span>
-                            <span style={{ color: "#111111", opacity: 0.9, fontWeight: 850 }}>
+                            <span
+                              style={{
+                                color: styles.colors.ink,
+                                opacity: 0.9,
+                                fontWeight: 850,
+                              }}
+                            >
                               {" "}
                               / {p.unit}
                             </span>
                           </div>
 
                           {q === 0 ? (
-                            <button style={styles.buyBtn} onClick={() => addToCart(p)}>
+                            <button
+                              style={styles.buyBtn}
+                              onClick={() => addToCart(p)}
+                            >
                               В корзину
                             </button>
                           ) : (
                             <div style={styles.qtyInline}>
-                              <button style={styles.qtyBtn} onClick={() => setQty(p.id, q - 1)}>
+                              <button
+                                style={styles.qtyBtn}
+                                onClick={() => setQty(p.id, q - 1)}
+                              >
                                 −
                               </button>
                               <div style={styles.qtyNum}>{q}</div>
-                              <button style={styles.qtyBtn} onClick={() => setQty(p.id, q + 1)}>
+                              <button
+                                style={styles.qtyBtn}
+                                onClick={() => setQty(p.id, q + 1)}
+                              >
                                 +
                               </button>
                             </div>
@@ -429,18 +503,33 @@ export default function App() {
                         </div>
 
                         <div style={styles.qtyBox}>
-                          <button style={styles.qtyBtn} onClick={() => setQty(it.product.id, it.qty - 1)}>
+                          <button
+                            style={styles.qtyBtn}
+                            onClick={() =>
+                              setQty(it.product.id, it.qty - 1)
+                            }
+                          >
                             −
                           </button>
                           <div style={styles.qtyNum}>{it.qty}</div>
-                          <button style={styles.qtyBtn} onClick={() => setQty(it.product.id, it.qty + 1)}>
+                          <button
+                            style={styles.qtyBtn}
+                            onClick={() =>
+                              setQty(it.product.id, it.qty + 1)
+                            }
+                          >
                             +
                           </button>
                         </div>
 
-                        <div style={styles.cartSum}>{money(it.qty * it.product.price)} ₽</div>
+                        <div style={styles.cartSum}>
+                          {money(it.qty * it.product.price)} ₽
+                        </div>
 
-                        <button style={styles.removeBtn} onClick={() => setQty(it.product.id, 0)}>
+                        <button
+                          style={styles.removeBtn}
+                          onClick={() => setQty(it.product.id, 0)}
+                        >
                           ✕
                         </button>
                       </div>
@@ -449,7 +538,9 @@ export default function App() {
                     <div style={styles.totalBlock}>
                       <div style={styles.totalRow}>
                         <div>Товары</div>
-                        <div style={{ fontWeight: 900 }}>{money(total)} ₽</div>
+                        <div style={{ fontWeight: 900 }}>
+                          {money(total)} ₽
+                        </div>
                       </div>
 
                       <div style={styles.totalRow}>
@@ -458,19 +549,28 @@ export default function App() {
                           {delivery === 0 ? (
                             <span style={styles.freeTag}>бесплатно</span>
                           ) : (
-                            <span style={styles.mutedTag}>до {money(FREE_DELIVERY_FROM)} ₽</span>
+                            <span style={styles.mutedTag}>
+                              до {money(FREE_DELIVERY_FROM)} ₽
+                            </span>
                           )}
                         </div>
-                        <div style={{ fontWeight: 900 }}>{money(delivery)} ₽</div>
+                        <div style={{ fontWeight: 900 }}>
+                          {money(delivery)} ₽
+                        </div>
                       </div>
 
                       <div style={styles.totalRowBig}>
                         <div>Итого</div>
-                        <div style={{ fontWeight: 950 }}>{money(grandTotal)} ₽</div>
+                        <div style={{ fontWeight: 950 }}>
+                          {money(grandTotal)} ₽
+                        </div>
                       </div>
                     </div>
 
-                    <button style={styles.primaryBtn} onClick={() => setTab("checkout")}>
+                    <button
+                      style={styles.primaryBtn}
+                      onClick={() => setTab("checkout")}
+                    >
                       Оформить
                     </button>
                   </>
@@ -494,7 +594,8 @@ export default function App() {
                 />
 
                 <label style={styles.label}>
-                  Телефон <span style={{ color: styles.colors.danger }}>*</span>
+                  Телефон{" "}
+                  <span style={{ color: styles.colors.danger }}>*</span>
                 </label>
                 <input
                   style={styles.input}
@@ -506,7 +607,8 @@ export default function App() {
                 />
 
                 <label style={styles.label}>
-                  Адрес доставки <span style={{ color: styles.colors.danger }}>*</span>
+                  Адрес доставки{" "}
+                  <span style={{ color: styles.colors.danger }}>*</span>
                 </label>
                 <input
                   style={styles.input}
@@ -536,15 +638,21 @@ export default function App() {
                       {delivery === 0 ? (
                         <span style={styles.freeTag}>бесплатно</span>
                       ) : (
-                        <span style={styles.mutedTag}>до {money(FREE_DELIVERY_FROM)} ₽</span>
+                        <span style={styles.mutedTag}>
+                          до {money(FREE_DELIVERY_FROM)} ₽
+                        </span>
                       )}
                     </div>
-                    <div style={{ fontWeight: 900 }}>{money(delivery)} ₽</div>
+                    <div style={{ fontWeight: 900 }}>
+                      {money(delivery)} ₽
+                    </div>
                   </div>
 
                   <div style={styles.totalRowBig}>
                     <div>Итого</div>
-                    <div style={{ fontWeight: 950 }}>{money(grandTotal)} ₽</div>
+                    <div style={{ fontWeight: 950 }}>
+                      {money(grandTotal)} ₽
+                    </div>
                   </div>
                 </div>
 
@@ -560,17 +668,25 @@ export default function App() {
                   {sending ? "Отправляем..." : "Подтвердить заказ"}
                 </button>
 
-                <button style={styles.secondaryBtn} onClick={() => setTab("cart")} disabled={sending}>
+                <button
+                  style={styles.secondaryBtn}
+                  onClick={() => setTab("cart")}
+                  disabled={sending}
+                >
                   Назад в корзину
                 </button>
 
-                <div style={styles.note}>Оплата пока не принимается в приложении — мы свяжемся после оформления.</div>
+                <div style={styles.note}>
+                  Оплата пока не принимается в приложении — мы свяжемся после
+                  оформления.
+                </div>
               </div>
             )}
           </>
         )}
       </div>
 
+      {/* Плавающая корзина */}
       {tab === "catalog" && cartCount > 0 && (
         <button style={styles.floatingCart} onClick={() => setTab("cart")}>
           🛒 Корзина: {cartCount} • {money(grandTotal)} ₽
@@ -580,6 +696,9 @@ export default function App() {
   );
 }
 
+/**
+ * Стили + палитра (ТОЛЬКО твои цвета)
+ */
 const styles: Record<string, React.CSSProperties> & {
   colors: {
     ink: string;
@@ -601,6 +720,7 @@ const styles: Record<string, React.CSSProperties> & {
     fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
     padding: 16,
     minHeight: "100vh",
+    boxSizing: "border-box",
     backgroundImage:
       "linear-gradient(rgba(255,255,255,0.30), rgba(255,255,255,0.50)), url('/images/bg-farm.png')",
     backgroundSize: "cover",
@@ -609,12 +729,15 @@ const styles: Record<string, React.CSSProperties> & {
     color: "#264653",
   },
 
+  // ✅ ВАЖНО: width + boxSizing, чтобы на телефоне ничего не вылезало
   container: {
     maxWidth: 520,
+    width: "100%",
+    boxSizing: "border-box",
     margin: "0 auto",
     background: "rgba(255,255,255,0.60)",
     borderRadius: 22,
-    padding: 14,
+    padding: 12, // было 14
     boxShadow: "0 20px 40px rgba(38,70,83,0.22)",
     border: "1px solid rgba(38,70,83,0.12)",
     backdropFilter: "blur(8px)",
@@ -638,6 +761,7 @@ const styles: Record<string, React.CSSProperties> & {
     color: "#264653",
     backdropFilter: "blur(10px)",
     WebkitBackdropFilter: "blur(10px)",
+    boxSizing: "border-box",
   },
   toastError: { background: "rgba(231,111,81,0.16)", color: "#264653" },
   toastSuccess: { background: "rgba(42,157,143,0.16)", color: "#264653" },
@@ -652,7 +776,7 @@ const styles: Record<string, React.CSSProperties> & {
     color: "#264653",
   },
 
-  // ✅ Минимализм: шапка без фона/blur/рамок
+  // ✅ Минимализм: без плашки
   header: {
     position: "sticky",
     top: 0,
@@ -687,10 +811,12 @@ const styles: Record<string, React.CSSProperties> & {
     color: "#264653",
     backdropFilter: "blur(10px)",
     WebkitBackdropFilter: "blur(10px)",
+    boxSizing: "border-box",
   },
   tabActive: {
     borderColor: "rgba(42,157,143,0.35)",
-    background: "linear-gradient(180deg, rgba(42,157,143,0.98) 0%, rgba(38,70,83,0.98) 140%)",
+    background:
+      "linear-gradient(180deg, rgba(42,157,143,0.98) 0%, rgba(38,70,83,0.98) 140%)",
     color: "#ffffff",
     boxShadow: "0 14px 30px rgba(42,157,143,0.26)",
   },
@@ -715,9 +841,11 @@ const styles: Record<string, React.CSSProperties> & {
     color: "#264653",
     backdropFilter: "blur(10px)",
     WebkitBackdropFilter: "blur(10px)",
+    boxSizing: "border-box",
   },
   chipActive: {
-    background: "linear-gradient(180deg, rgba(42,157,143,0.98) 0%, rgba(38,70,83,0.98) 140%)",
+    background:
+      "linear-gradient(180deg, rgba(42,157,143,0.98) 0%, rgba(38,70,83,0.98) 140%)",
     color: "#ffffff",
     borderColor: "rgba(42,157,143,0.35)",
     boxShadow: "0 14px 30px rgba(42,157,143,0.22)",
@@ -738,6 +866,7 @@ const styles: Record<string, React.CSSProperties> & {
     gridTemplateColumns: "120px 1fr",
     backdropFilter: "blur(10px)",
     WebkitBackdropFilter: "blur(10px)",
+    boxSizing: "border-box",
   },
 
   cardImg: { width: 120, height: 120, objectFit: "cover", display: "block" },
@@ -751,18 +880,28 @@ const styles: Record<string, React.CSSProperties> & {
     background: "rgba(233,196,106,0.22)",
     color: "#264653",
     fontWeight: 950,
-    backdropFilter: "blur(10px)",
-    WebkitBackdropFilter: "blur(10px)",
+    boxSizing: "border-box",
   },
 
   cardBody: { padding: 12, display: "flex", flexDirection: "column", gap: 8 },
-  cardName: { fontSize: 18, fontWeight: 950, lineHeight: 1.15, color: "#264653" },
-  cardDesc: { fontSize: 13, color: "rgba(38,70,83,0.90)", lineHeight: 1.25, fontWeight: 700 },
+  cardName: {
+    fontSize: 18,
+    fontWeight: 950,
+    lineHeight: 1.15,
+    color: "#264653",
+  },
+  cardDesc: {
+    fontSize: 13,
+    color: "rgba(38,70,83,0.90)",
+    lineHeight: 1.25,
+    fontWeight: 700,
+  },
   cardMeta: { color: "#111111", fontWeight: 950 },
 
   buyBtn: {
     marginTop: 6,
-    background: "linear-gradient(180deg, rgba(42,157,143,1) 0%, rgba(38,70,83,1) 140%)",
+    background:
+      "linear-gradient(180deg, rgba(42,157,143,1) 0%, rgba(38,70,83,1) 140%)",
     color: "#fff",
     border: "1px solid rgba(255,255,255,0.22)",
     borderRadius: 14,
@@ -771,18 +910,21 @@ const styles: Record<string, React.CSSProperties> & {
     cursor: "pointer",
     width: "fit-content",
     boxShadow: "0 14px 30px rgba(42,157,143,0.22)",
+    boxSizing: "border-box",
   },
 
   qtyInline: { display: "flex", alignItems: "center", gap: 8, marginTop: 6 },
 
+  // ✅ ВАЖНО: padding меньше + boxSizing
   panel: {
     background: "rgba(255,255,255,0.80)",
     borderRadius: 18,
-    padding: 14,
+    padding: 12, // было 14
     boxShadow: "0 12px 26px rgba(38,70,83,0.16)",
     border: "1px solid rgba(38,70,83,0.12)",
     backdropFilter: "blur(10px)",
     WebkitBackdropFilter: "blur(10px)",
+    boxSizing: "border-box",
   },
 
   cartRow: {
@@ -806,8 +948,7 @@ const styles: Record<string, React.CSSProperties> & {
     cursor: "pointer",
     boxShadow: "0 10px 20px rgba(38,70,83,0.14)",
     color: "#264653",
-    backdropFilter: "blur(10px)",
-    WebkitBackdropFilter: "blur(10px)",
+    boxSizing: "border-box",
   },
   qtyNum: { minWidth: 24, textAlign: "center", fontWeight: 950, color: "#264653" },
 
@@ -822,8 +963,7 @@ const styles: Record<string, React.CSSProperties> & {
     cursor: "pointer",
     padding: "6px 10px",
     boxShadow: "0 10px 18px rgba(231,111,81,0.18)",
-    backdropFilter: "blur(10px)",
-    WebkitBackdropFilter: "blur(10px)",
+    boxSizing: "border-box",
   },
 
   totalBlock: {
@@ -862,6 +1002,7 @@ const styles: Record<string, React.CSSProperties> & {
     fontWeight: 950,
     fontSize: 12,
     border: "1px solid rgba(233,196,106,0.65)",
+    boxSizing: "border-box",
   },
   mutedTag: {
     marginLeft: 8,
@@ -872,13 +1013,24 @@ const styles: Record<string, React.CSSProperties> & {
     fontWeight: 900,
     fontSize: 12,
     border: "1px solid rgba(244,162,97,0.55)",
+    boxSizing: "border-box",
   },
 
   h2: { fontSize: 20, fontWeight: 950, marginBottom: 10, color: "#264653" },
 
-  label: { display: "block", marginTop: 10, fontWeight: 950, color: "#264653" },
+  // ✅ Чуть меньше шрифт + чтобы заголовки не "перли" вширь
+  label: {
+    display: "block",
+    marginTop: 10,
+    fontWeight: 900,
+    fontSize: 14,
+    color: "#264653",
+  },
+
+  // ✅ ГЛАВНОЕ: boxSizing чтобы input не становился шире контейнера
   input: {
     width: "100%",
+    boxSizing: "border-box",
     padding: "12px 12px",
     borderRadius: 14,
     border: "1px solid rgba(38,70,83,0.16)",
@@ -888,14 +1040,13 @@ const styles: Record<string, React.CSSProperties> & {
     outline: "none",
     boxShadow: "0 10px 18px rgba(38,70,83,0.10)",
     color: "#264653",
-    backdropFilter: "blur(10px)",
-    WebkitBackdropFilter: "blur(10px)",
   },
 
   primaryBtn: {
     width: "100%",
     marginTop: 12,
-    background: "linear-gradient(180deg, rgba(42,157,143,1) 0%, rgba(38,70,83,1) 140%)",
+    background:
+      "linear-gradient(180deg, rgba(42,157,143,1) 0%, rgba(38,70,83,1) 140%)",
     color: "#fff",
     border: "1px solid rgba(255,255,255,0.22)",
     borderRadius: 16,
@@ -903,6 +1054,7 @@ const styles: Record<string, React.CSSProperties> & {
     fontWeight: 950,
     cursor: "pointer",
     boxShadow: "0 16px 34px rgba(42,157,143,0.24)",
+    boxSizing: "border-box",
   },
 
   secondaryBtn: {
@@ -916,11 +1068,15 @@ const styles: Record<string, React.CSSProperties> & {
     fontWeight: 950,
     cursor: "pointer",
     boxShadow: "0 12px 26px rgba(244,162,97,0.18)",
-    backdropFilter: "blur(10px)",
-    WebkitBackdropFilter: "blur(10px)",
+    boxSizing: "border-box",
   },
 
-  note: { marginTop: 10, fontSize: 12, color: "rgba(38,70,83,0.86)", fontWeight: 700 },
+  note: {
+    marginTop: 10,
+    fontSize: 12,
+    color: "rgba(38,70,83,0.86)",
+    fontWeight: 700,
+  },
 
   floatingCart: {
     position: "fixed",
@@ -930,15 +1086,15 @@ const styles: Record<string, React.CSSProperties> & {
     zIndex: 9999,
     maxWidth: 520,
     width: "calc(100% - 32px)",
+    boxSizing: "border-box",
     border: "1px solid rgba(38,70,83,0.18)",
-    background: "linear-gradient(180deg, rgba(233,196,106,0.92) 0%, rgba(244,162,97,0.90) 100%)",
+    background:
+      "linear-gradient(180deg, rgba(233,196,106,0.92) 0%, rgba(244,162,97,0.90) 100%)",
     color: "#264653",
     borderRadius: 999,
     padding: "12px 14px",
     fontWeight: 950,
     cursor: "pointer",
     boxShadow: "0 18px 38px rgba(38,70,83,0.22)",
-    backdropFilter: "blur(10px)",
-    WebkitBackdropFilter: "blur(10px)",
   },
 };
