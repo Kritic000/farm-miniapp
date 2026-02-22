@@ -54,10 +54,7 @@ function loadProductsCache(): { ts: number; products: Product[] } | null {
 
 function saveProductsCache(products: Product[]) {
   try {
-    localStorage.setItem(
-      PRODUCTS_CACHE_KEY,
-      JSON.stringify({ ts: Date.now(), products })
-    );
+    localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), products }));
   } catch {}
 }
 
@@ -179,14 +176,8 @@ export default function App() {
   }, [products, activeCategory]);
 
   const cartItems = useMemo(() => Object.values(cart), [cart]);
-  const cartCount = useMemo(
-    () => cartItems.reduce((s, it) => s + it.qty, 0),
-    [cartItems]
-  );
-  const total = useMemo(
-    () => cartItems.reduce((s, it) => s + it.qty * it.product.price, 0),
-    [cartItems]
-  );
+  const cartCount = useMemo(() => cartItems.reduce((s, it) => s + it.qty, 0), [cartItems]);
+  const total = useMemo(() => cartItems.reduce((s, it) => s + it.qty * it.product.price, 0), [cartItems]);
 
   function addToCart(p: Product) {
     setCart((prev) => {
@@ -214,8 +205,7 @@ export default function App() {
   function validateCheckout(): string | null {
     if (customerName.trim().length < 2) return "Укажи имя (минимум 2 символа).";
     if (phone.trim().length < 6) return "Укажи телефон (минимум 6 символов).";
-    if (address.trim().length < 5)
-      return "Укажи адрес доставки (минимум 5 символов).";
+    if (address.trim().length < 5) return "Укажи адрес доставки (минимум 5 символов).";
     if (cartItems.length === 0) return "Корзина пустая.";
     return null;
   }
@@ -223,12 +213,12 @@ export default function App() {
   async function submitOrder() {
     const validationError = validateCheckout();
     if (validationError) {
-      // ВАЖНО: без alert — иначе Telegram иногда “ломает” ввод
       setToast({ type: "error", text: validationError });
       return;
     }
 
     const tg = getTgUser();
+
     const payload = {
       token: API_TOKEN,
       tg: tg || {},
@@ -304,6 +294,7 @@ export default function App() {
 
       <div style={styles.header}>
         <div style={styles.title}>Каталог</div>
+
         <div style={styles.tabs}>
           <button
             style={{
@@ -314,6 +305,7 @@ export default function App() {
           >
             Товары
           </button>
+
           <button
             style={{
               ...styles.tabBtn,
@@ -327,9 +319,7 @@ export default function App() {
       </div>
 
       {loading && <div style={styles.info}>Загрузка ассортимента…</div>}
-      {!loading && loadingHint && (
-        <div style={styles.infoMuted}>{loadingHint}</div>
-      )}
+      {!loading && loadingHint && <div style={styles.infoMuted}>{loadingHint}</div>}
       {error && <div style={{ ...styles.info, color: "#b00020" }}>{error}</div>}
 
       {!loading && !error && (
@@ -354,6 +344,7 @@ export default function App() {
               <div style={styles.list}>
                 {filteredProducts.map((p) => {
                   const q = qtyOf(p.id);
+
                   return (
                     <div key={p.id} style={styles.card}>
                       {p.image ? (
@@ -362,9 +353,7 @@ export default function App() {
                           alt={p.name}
                           style={styles.cardImg}
                           onError={(e) => {
-                            // если битый путь — покажем плейсхолдер (скрываем img)
-                            (e.currentTarget as HTMLImageElement).style.display =
-                              "none";
+                            (e.currentTarget as HTMLImageElement).style.display = "none";
                           }}
                         />
                       ) : (
@@ -373,9 +362,8 @@ export default function App() {
 
                       <div style={styles.cardBody}>
                         <div style={styles.cardName}>{p.name}</div>
-                        {p.description ? (
-                          <div style={styles.cardDesc}>{p.description}</div>
-                        ) : null}
+
+                        {p.description ? <div style={styles.cardDesc}>{p.description}</div> : null}
 
                         <div style={styles.cardMeta}>
                           {money(p.price)} ₽ / {p.unit}
@@ -385,6 +373,15 @@ export default function App() {
                           <button
                             style={styles.buyBtn}
                             onClick={() => addToCart(p)}
+                            onMouseDown={(e) => {
+                              (e.currentTarget as HTMLButtonElement).style.transform = "translateY(1px) scale(0.99)";
+                            }}
+                            onMouseUp={(e) => {
+                              (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0px) scale(1)";
+                            }}
+                            onMouseLeave={(e) => {
+                              (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0px) scale(1)";
+                            }}
                           >
                             В корзину
                           </button>
@@ -393,6 +390,15 @@ export default function App() {
                             <button
                               style={styles.qtyBtn}
                               onClick={() => setQty(p.id, q - 1)}
+                              onMouseDown={(e) => {
+                                (e.currentTarget as HTMLButtonElement).style.transform = "translateY(1px) scale(0.99)";
+                              }}
+                              onMouseUp={(e) => {
+                                (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0px) scale(1)";
+                              }}
+                              onMouseLeave={(e) => {
+                                (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0px) scale(1)";
+                              }}
                             >
                               −
                             </button>
@@ -400,6 +406,15 @@ export default function App() {
                             <button
                               style={styles.qtyBtn}
                               onClick={() => setQty(p.id, q + 1)}
+                              onMouseDown={(e) => {
+                                (e.currentTarget as HTMLButtonElement).style.transform = "translateY(1px) scale(0.99)";
+                              }}
+                              onMouseUp={(e) => {
+                                (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0px) scale(1)";
+                              }}
+                              onMouseLeave={(e) => {
+                                (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0px) scale(1)";
+                              }}
                             >
                               +
                             </button>
@@ -432,6 +447,15 @@ export default function App() {
                         <button
                           style={styles.qtyBtn}
                           onClick={() => setQty(it.product.id, it.qty - 1)}
+                          onMouseDown={(e) => {
+                            (e.currentTarget as HTMLButtonElement).style.transform = "translateY(1px) scale(0.99)";
+                          }}
+                          onMouseUp={(e) => {
+                            (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0px) scale(1)";
+                          }}
+                          onMouseLeave={(e) => {
+                            (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0px) scale(1)";
+                          }}
                         >
                           −
                         </button>
@@ -439,18 +463,34 @@ export default function App() {
                         <button
                           style={styles.qtyBtn}
                           onClick={() => setQty(it.product.id, it.qty + 1)}
+                          onMouseDown={(e) => {
+                            (e.currentTarget as HTMLButtonElement).style.transform = "translateY(1px) scale(0.99)";
+                          }}
+                          onMouseUp={(e) => {
+                            (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0px) scale(1)";
+                          }}
+                          onMouseLeave={(e) => {
+                            (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0px) scale(1)";
+                          }}
                         >
                           +
                         </button>
                       </div>
 
-                      <div style={styles.cartSum}>
-                        {money(it.qty * it.product.price)} ₽
-                      </div>
+                      <div style={styles.cartSum}>{money(it.qty * it.product.price)} ₽</div>
 
                       <button
                         style={styles.removeBtn}
                         onClick={() => setQty(it.product.id, 0)}
+                        onMouseDown={(e) => {
+                          (e.currentTarget as HTMLButtonElement).style.transform = "translateY(1px) scale(0.99)";
+                        }}
+                        onMouseUp={(e) => {
+                          (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0px) scale(1)";
+                        }}
+                        onMouseLeave={(e) => {
+                          (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0px) scale(1)";
+                        }}
                       >
                         ✕
                       </button>
@@ -459,12 +499,21 @@ export default function App() {
 
                   <div style={styles.totalRow}>
                     <div>Итого</div>
-                    <div style={{ fontWeight: 800 }}>{money(total)} ₽</div>
+                    <div style={{ fontWeight: 900 }}>{money(total)} ₽</div>
                   </div>
 
                   <button
                     style={styles.primaryBtn}
                     onClick={() => setTab("checkout")}
+                    onMouseDown={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.transform = "translateY(1px) scale(0.99)";
+                    }}
+                    onMouseUp={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0px) scale(1)";
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0px) scale(1)";
+                    }}
                   >
                     Оформить
                   </button>
@@ -521,7 +570,7 @@ export default function App() {
 
               <div style={styles.totalRow}>
                 <div>Итого</div>
-                <div style={{ fontWeight: 800 }}>{money(total)} ₽</div>
+                <div style={{ fontWeight: 900 }}>{money(total)} ₽</div>
               </div>
 
               <button
@@ -532,6 +581,16 @@ export default function App() {
                 }}
                 onClick={submitOrder}
                 disabled={sending}
+                onMouseDown={(e) => {
+                  if (sending) return;
+                  (e.currentTarget as HTMLButtonElement).style.transform = "translateY(1px) scale(0.99)";
+                }}
+                onMouseUp={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0px) scale(1)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0px) scale(1)";
+                }}
               >
                 {sending ? "Отправляем..." : "Подтвердить заказ"}
               </button>
@@ -540,13 +599,22 @@ export default function App() {
                 style={styles.secondaryBtn}
                 onClick={() => setTab("cart")}
                 disabled={sending}
+                onMouseDown={(e) => {
+                  if (sending) return;
+                  (e.currentTarget as HTMLButtonElement).style.transform = "translateY(1px) scale(0.99)";
+                }}
+                onMouseUp={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0px) scale(1)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0px) scale(1)";
+                }}
               >
                 Назад в корзину
               </button>
 
               <div style={styles.note}>
-                Оплата пока не принимается в приложении — мы свяжемся после
-                оформления.
+                Оплата пока не принимается в приложении — мы свяжемся после оформления.
               </div>
             </div>
           )}
@@ -560,7 +628,8 @@ const styles: Record<string, React.CSSProperties> = {
   page: {
     fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
     padding: 16,
-    background: "#f2f3f5",
+    background:
+      "radial-gradient(1200px 600px at 20% 0%, rgba(47,188,47,0.12) 0%, rgba(242,243,245,1) 45%)",
     minHeight: "100vh",
   },
 
@@ -574,14 +643,16 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "space-between",
     gap: 10,
     padding: "12px 12px",
-    borderRadius: 12,
-    boxShadow: "0 8px 20px rgba(0,0,0,0.18)",
+    borderRadius: 14,
+    boxShadow: "0 10px 24px rgba(0,0,0,0.18)",
     marginBottom: 10,
     border: "1px solid rgba(0,0,0,0.06)",
+    backdropFilter: "blur(10px)",
+    WebkitBackdropFilter: "blur(10px)",
   },
-  toastError: { background: "#ffe8ea", color: "#7a0010" },
-  toastSuccess: { background: "#e7f6ea", color: "#0e4b1b" },
-  toastInfo: { background: "#eef2ff", color: "#1c2b6b" },
+  toastError: { background: "rgba(255,232,234,0.92)", color: "#7a0010" },
+  toastSuccess: { background: "rgba(231,246,234,0.92)", color: "#0e4b1b" },
+  toastInfo: { background: "rgba(238,242,255,0.92)", color: "#1c2b6b" },
   toastClose: {
     border: 0,
     background: "transparent",
@@ -592,56 +663,86 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   header: {
+    position: "sticky",
+    top: 0,
+    zIndex: 50,
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     gap: 12,
     marginBottom: 12,
+    padding: "10px 0",
+    background:
+      "linear-gradient(180deg, rgba(242,243,245,0.92) 0%, rgba(242,243,245,0.55) 100%)",
+    backdropFilter: "blur(8px)",
+    WebkitBackdropFilter: "blur(8px)",
   },
-  title: { fontSize: 34, fontWeight: 900, letterSpacing: -0.5 },
+  title: { fontSize: 34, fontWeight: 950 as any, letterSpacing: -0.6 },
+
   tabs: { display: "flex", gap: 8 },
+
+  // ===== Modern tabs =====
   tabBtn: {
-    border: "1px solid #d0d0d0",
-    background: "#fff",
-    padding: "10px 12px",
-    borderRadius: 10,
-    fontWeight: 700,
+    border: "1px solid rgba(0,0,0,0.08)",
+    background: "rgba(255,255,255,0.75)",
+    backdropFilter: "blur(10px)",
+    WebkitBackdropFilter: "blur(10px)",
+    padding: "10px 14px",
+    borderRadius: 999,
+    fontWeight: 900,
     cursor: "pointer",
+    transition:
+      "transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease, border-color 0.12s ease",
+    boxShadow: "0 6px 16px rgba(0,0,0,0.08)",
   },
-  tabActive: { background: "#e6f2e6", borderColor: "#7ab37a" },
+  tabActive: {
+    borderColor: "rgba(31,122,31,0.25)",
+    background: "linear-gradient(180deg, rgba(47,188,47,0.95) 0%, rgba(31,122,31,0.98) 100%)",
+    color: "#fff",
+    boxShadow: "0 10px 22px rgba(31,122,31,0.25)",
+  },
 
   chipsRow: {
     display: "flex",
     gap: 8,
     overflowX: "auto",
-    paddingBottom: 8,
+    paddingBottom: 10,
     marginBottom: 10,
   },
+
+  // ===== Modern chips =====
   chip: {
-    border: "1px solid #d0d0d0",
-    background: "#fff",
-    padding: "8px 10px",
+    border: "1px solid rgba(0,0,0,0.08)",
+    background: "rgba(255,255,255,0.78)",
+    backdropFilter: "blur(10px)",
+    WebkitBackdropFilter: "blur(10px)",
+    padding: "9px 12px",
     borderRadius: 999,
-    fontWeight: 700,
+    fontWeight: 900,
     cursor: "pointer",
     whiteSpace: "nowrap",
+    transition:
+      "transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease, border-color 0.12s ease",
+    boxShadow: "0 6px 14px rgba(0,0,0,0.06)",
   },
   chipActive: {
-    background: "#1f7a1f",
+    background: "linear-gradient(180deg, rgba(47,188,47,0.95) 0%, rgba(31,122,31,0.98) 100%)",
     color: "#fff",
-    borderColor: "#1f7a1f",
+    borderColor: "rgba(31,122,31,0.25)",
+    boxShadow: "0 10px 22px rgba(31,122,31,0.22)",
   },
 
-  info: { padding: 12, fontWeight: 700 },
+  info: { padding: 12, fontWeight: 800 },
   infoMuted: { padding: 8, color: "#555" },
 
   list: { display: "grid", gap: 12 },
 
   card: {
-    background: "#fff",
-    borderRadius: 14,
+    background: "rgba(255,255,255,0.92)",
+    borderRadius: 18,
     overflow: "hidden",
-    boxShadow: "0 1px 10px rgba(0,0,0,0.06)",
+    boxShadow: "0 12px 26px rgba(0,0,0,0.08)",
+    border: "1px solid rgba(0,0,0,0.06)",
     display: "grid",
     gridTemplateColumns: "120px 1fr",
   },
@@ -652,33 +753,38 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    background: "#e9eaec",
+    background: "linear-gradient(180deg, rgba(233,234,236,1) 0%, rgba(225,226,228,1) 100%)",
     color: "#666",
-    fontWeight: 700,
+    fontWeight: 800,
   },
   cardBody: { padding: 12, display: "flex", flexDirection: "column", gap: 8 },
-  cardName: { fontSize: 18, fontWeight: 900, lineHeight: 1.15 },
+  cardName: { fontSize: 18, fontWeight: 950 as any, lineHeight: 1.15 },
   cardDesc: { fontSize: 13, color: "#333", lineHeight: 1.25 },
-  cardMeta: { color: "#222", fontWeight: 700 },
+  cardMeta: { color: "#222", fontWeight: 900 },
 
+  // ===== Modern "В корзину" =====
   buyBtn: {
-    marginTop: 4,
-    background: "#1f7a1f",
+    marginTop: 6,
+    background: "linear-gradient(180deg, #2fbc2f 0%, #1f7a1f 100%)",
     color: "#fff",
-    border: 0,
-    borderRadius: 10,
-    padding: "10px 12px",
-    fontWeight: 800,
+    border: "1px solid rgba(255,255,255,0.25)",
+    borderRadius: 14,
+    padding: "10px 14px",
+    fontWeight: 950 as any,
     cursor: "pointer",
     width: "fit-content",
+    transition: "transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease",
+    boxShadow: "0 10px 22px rgba(31,122,31,0.22)",
   },
 
-  qtyInline: { display: "flex", alignItems: "center", gap: 8, marginTop: 4 },
+  qtyInline: { display: "flex", alignItems: "center", gap: 8, marginTop: 6 },
+
   panel: {
-    background: "#fff",
-    borderRadius: 14,
+    background: "rgba(255,255,255,0.92)",
+    borderRadius: 18,
     padding: 14,
-    boxShadow: "0 1px 10px rgba(0,0,0,0.06)",
+    boxShadow: "0 12px 26px rgba(0,0,0,0.08)",
+    border: "1px solid rgba(0,0,0,0.06)",
   },
 
   cartRow: {
@@ -686,30 +792,41 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: 10,
     padding: "10px 0",
-    borderBottom: "1px solid #eee",
+    borderBottom: "1px solid rgba(0,0,0,0.06)",
   },
-  cartName: { fontWeight: 900 },
-  cartMeta: { color: "#333", fontWeight: 700, fontSize: 13 },
+  cartName: { fontWeight: 950 as any },
+  cartMeta: { color: "#333", fontWeight: 800, fontSize: 13 },
 
   qtyBox: { display: "flex", alignItems: "center", gap: 6 },
-  qtyBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    border: "1px solid #d0d0d0",
-    background: "#fff",
-    fontSize: 18,
-    cursor: "pointer",
-  },
-  qtyNum: { minWidth: 24, textAlign: "center", fontWeight: 900 },
 
-  cartSum: { width: 90, textAlign: "right", fontWeight: 900 },
-  removeBtn: {
-    border: 0,
-    background: "transparent",
+  // ===== Modern +/- =====
+  qtyBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    border: "1px solid rgba(0,0,0,0.10)",
+    background: "rgba(255,255,255,0.9)",
+    backdropFilter: "blur(10px)",
+    WebkitBackdropFilter: "blur(10px)",
     fontSize: 18,
     cursor: "pointer",
-    padding: 6,
+    transition: "transform 0.12s ease, box-shadow 0.12s ease",
+    boxShadow: "0 8px 18px rgba(0,0,0,0.07)",
+  },
+  qtyNum: { minWidth: 24, textAlign: "center", fontWeight: 950 as any },
+
+  cartSum: { width: 90, textAlign: "right", fontWeight: 950 as any },
+
+  // ===== Modern remove =====
+  removeBtn: {
+    border: "1px solid rgba(0,0,0,0.08)",
+    background: "rgba(255,255,255,0.85)",
+    borderRadius: 12,
+    fontSize: 16,
+    cursor: "pointer",
+    padding: "6px 10px",
+    transition: "transform 0.12s ease, box-shadow 0.12s ease",
+    boxShadow: "0 8px 18px rgba(0,0,0,0.06)",
   },
 
   totalRow: {
@@ -721,39 +838,47 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 16,
   },
 
-  h2: { fontSize: 20, fontWeight: 900, marginBottom: 10 },
+  h2: { fontSize: 20, fontWeight: 950 as any, marginBottom: 10 },
 
-  label: { display: "block", marginTop: 10, fontWeight: 800 },
+  label: { display: "block", marginTop: 10, fontWeight: 900 },
   input: {
     width: "100%",
     padding: "12px 12px",
-    borderRadius: 10,
-    border: "1px solid #d0d0d0",
+    borderRadius: 14,
+    border: "1px solid rgba(0,0,0,0.10)",
     marginTop: 6,
     fontSize: 14,
+    background: "rgba(255,255,255,0.92)",
+    outline: "none",
+    boxShadow: "0 8px 18px rgba(0,0,0,0.05)",
   },
 
+  // ===== Modern primary/secondary =====
   primaryBtn: {
     width: "100%",
     marginTop: 12,
-    background: "#1f7a1f",
+    background: "linear-gradient(180deg, #2fbc2f 0%, #1f7a1f 100%)",
     color: "#fff",
-    border: 0,
-    borderRadius: 12,
-    padding: "12px 14px",
-    fontWeight: 900,
+    border: "1px solid rgba(255,255,255,0.25)",
+    borderRadius: 16,
+    padding: "13px 14px",
+    fontWeight: 950 as any,
     cursor: "pointer",
+    transition: "transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease",
+    boxShadow: "0 12px 26px rgba(31,122,31,0.22)",
   },
   secondaryBtn: {
     width: "100%",
     marginTop: 10,
-    background: "#fff",
+    background: "rgba(255,255,255,0.85)",
     color: "#111",
-    border: "1px solid #d0d0d0",
-    borderRadius: 12,
-    padding: "12px 14px",
-    fontWeight: 900,
+    border: "1px solid rgba(0,0,0,0.10)",
+    borderRadius: 16,
+    padding: "13px 14px",
+    fontWeight: 950 as any,
     cursor: "pointer",
+    transition: "transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease",
+    boxShadow: "0 10px 22px rgba(0,0,0,0.08)",
   },
 
   note: { marginTop: 10, fontSize: 12, color: "#555" },
