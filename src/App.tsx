@@ -388,11 +388,15 @@ export default function App() {
                           <div style={styles.cardName}>{p.name}</div>
                           {p.description ? <div style={styles.cardDesc}>{p.description}</div> : null}
 
+                          {/* ✅ ИСПРАВЛЕНО: цена без дубля */}
                           <div style={styles.cardMeta}>
-                            <span style={{ color: "#2a9d8f" }}>
-                            {money(p.price)} ₽ / {p.unit}
-                              </span>{" "}
-                            / {p.unit}
+                            <span style={{ color: styles.colors.primary, fontWeight: 950 }}>
+                              {money(p.price)} ₽
+                            </span>
+                            <span style={{ color: "#111111", opacity: 0.9, fontWeight: 850 }}>
+                              {" "}
+                              / {p.unit}
+                            </span>
                           </div>
 
                           {q === 0 ? (
@@ -576,7 +580,6 @@ export default function App() {
         )}
       </div>
 
-      {/* Плавающая корзина */}
       {tab === "catalog" && cartCount > 0 && (
         <button style={styles.floatingCart} onClick={() => setTab("cart")}>
           🛒 Корзина: {cartCount} • {money(grandTotal)} ₽
@@ -610,7 +613,6 @@ const styles: Record<string, React.CSSProperties> & {
     fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
     padding: 16,
     minHeight: "100vh",
-    // фон-картинка + вуаль
     backgroundImage:
       "linear-gradient(rgba(255,255,255,0.30), rgba(255,255,255,0.50)), url('/images/bg-farm.png')",
     backgroundSize: "cover",
@@ -662,6 +664,7 @@ const styles: Record<string, React.CSSProperties> & {
     color: "#264653",
   },
 
+  // ✅ Исправлено: шапка стала мягче/менее “жирной”
   header: {
     position: "sticky",
     top: 0,
@@ -672,13 +675,20 @@ const styles: Record<string, React.CSSProperties> & {
     gap: 10,
     marginBottom: 12,
     padding: "10px 0",
-    background: "rgba(255,255,255,0.50)",
-    backdropFilter: "blur(10px)",
-    WebkitBackdropFilter: "blur(10px)",
-    borderBottom: "1px solid rgba(38,70,83,0.10)",
+    background: "rgba(255,255,255,0.22)",
+    backdropFilter: "blur(8px)",
+    WebkitBackdropFilter: "blur(8px)",
+    borderBottom: "1px solid rgba(38,70,83,0.06)",
   },
 
-  title: { fontSize: 34, fontWeight: 950, letterSpacing: -0.6, color: "#264653" },
+  // ✅ Заголовок чуть спокойнее
+  title: {
+    fontSize: 30,
+    fontWeight: 900,
+    letterSpacing: -0.5,
+    color: "#264653",
+    opacity: 0.92,
+  },
 
   tabs: { display: "flex", gap: 10 },
 
@@ -764,6 +774,8 @@ const styles: Record<string, React.CSSProperties> & {
   cardBody: { padding: 12, display: "flex", flexDirection: "column", gap: 8 },
   cardName: { fontSize: 18, fontWeight: 950, lineHeight: 1.15, color: "#264653" },
   cardDesc: { fontSize: 13, color: "rgba(38,70,83,0.90)", lineHeight: 1.25, fontWeight: 700 },
+
+  // общий стиль строки цены (цвет делаем нейтральный, а цену красим span-ом)
   cardMeta: { color: "#111111", fontWeight: 950 },
 
   buyBtn: {
@@ -948,9 +960,3 @@ const styles: Record<string, React.CSSProperties> & {
     WebkitBackdropFilter: "blur(10px)",
   },
 };
-
-
-
-
-
-
