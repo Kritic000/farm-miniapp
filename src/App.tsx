@@ -306,7 +306,6 @@ export default function App() {
 
   return (
     <div style={styles.page}>
-      {/* Toast */}
       {toast && (
         <div
           style={{
@@ -323,9 +322,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Карточка поверх фона */}
       <div style={styles.container}>
-        {/* СДЕЛАЛИ header sticky, чтобы он “ездил” вместе */}
         <div style={styles.header}>
           <div style={styles.title}>Каталог</div>
 
@@ -348,7 +345,7 @@ export default function App() {
 
         {loading && <div style={styles.info}>Загрузка ассортимента…</div>}
         {!loading && loadingHint && <div style={styles.infoMuted}>{loadingHint}</div>}
-        {error && <div style={{ ...styles.info, color: "#b00020" }}>{error}</div>}
+        {error && <div style={{ ...styles.info, color: styles.colors.danger }}>{error}</div>}
 
         {!loading && !error && (
           <>
@@ -488,7 +485,7 @@ export default function App() {
                 <div style={styles.h2}>Оформление</div>
 
                 <label style={styles.label}>
-                  Имя <span style={{ color: "#b00020" }}>*</span>
+                  Имя <span style={{ color: styles.colors.danger }}>*</span>
                 </label>
                 <input
                   style={styles.input}
@@ -499,7 +496,7 @@ export default function App() {
                 />
 
                 <label style={styles.label}>
-                  Телефон <span style={{ color: "#b00020" }}>*</span>
+                  Телефон <span style={{ color: styles.colors.danger }}>*</span>
                 </label>
                 <input
                   style={styles.input}
@@ -511,7 +508,7 @@ export default function App() {
                 />
 
                 <label style={styles.label}>
-                  Адрес доставки <span style={{ color: "#b00020" }}>*</span>
+                  Адрес доставки <span style={{ color: styles.colors.danger }}>*</span>
                 </label>
                 <input
                   style={styles.input}
@@ -576,7 +573,7 @@ export default function App() {
         )}
       </div>
 
-      {/* ✅ ПЛАВАЮЩАЯ КОРЗИНА: всегда видна при скролле каталога */}
+      {/* Плавающая корзина */}
       {tab === "catalog" && cartCount > 0 && (
         <button style={styles.floatingCart} onClick={() => setTab("cart")}>
           🛒 Корзина: {cartCount} • {money(grandTotal)} ₽
@@ -586,33 +583,51 @@ export default function App() {
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  // фон
+/**
+ * Стили + палитра (ТОЛЬКО твои цвета)
+ */
+const styles: Record<string, React.CSSProperties> & {
+  colors: {
+    ink: string;
+    primary: string;
+    sun: string;
+    orange: string;
+    danger: string;
+  };
+} = {
+  colors: {
+    ink: "#264653",
+    primary: "#2a9d8f",
+    sun: "#e9c46a",
+    orange: "#f4a261",
+    danger: "#e76f51",
+  },
+
   page: {
     fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
     padding: 16,
     minHeight: "100vh",
+    // фон-картинка + вуаль
     backgroundImage:
       "linear-gradient(rgba(255,255,255,0.55), rgba(255,255,255,0.85)), url('/images/bg-farm.png')",
     backgroundSize: "cover",
     backgroundPosition: "center top",
     backgroundRepeat: "no-repeat",
+    color: "#264653",
   },
 
-  // карточка поверх фона
   container: {
     maxWidth: 520,
     margin: "0 auto",
     background: "rgba(255,255,255,0.80)",
     borderRadius: 22,
     padding: 14,
-    boxShadow: "0 20px 40px rgba(0,0,0,0.15)",
-    border: "1px solid rgba(255,255,255,0.6)",
+    boxShadow: "0 20px 40px rgba(38,70,83,0.22)",
+    border: "1px solid rgba(38,70,83,0.12)",
     backdropFilter: "blur(8px)",
     WebkitBackdropFilter: "blur(8px)",
   },
 
-  // toast
   toast: {
     position: "sticky",
     top: 8,
@@ -623,14 +638,17 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 10,
     padding: "12px 12px",
     borderRadius: 14,
-    boxShadow: "0 12px 26px rgba(0,0,0,0.18)",
+    boxShadow: "0 12px 26px rgba(38,70,83,0.20)",
     marginBottom: 10,
-    border: "1px solid rgba(0,0,0,0.10)",
-    background: "#fff",
+    border: "1px solid rgba(38,70,83,0.12)",
+    background: "rgba(255,255,255,0.92)",
+    color: "#264653",
+    backdropFilter: "blur(10px)",
+    WebkitBackdropFilter: "blur(10px)",
   },
-  toastError: { background: "rgba(255,232,234,0.95)", color: "#7a0010" },
-  toastSuccess: { background: "rgba(231,246,234,0.95)", color: "#0e4b1b" },
-  toastInfo: { background: "rgba(238,242,255,0.95)", color: "#1c2b6b" },
+  toastError: { background: "rgba(231,111,81,0.16)", color: "#264653" },
+  toastSuccess: { background: "rgba(42,157,143,0.16)", color: "#264653" },
+  toastInfo: { background: "rgba(233,196,106,0.20)", color: "#264653" },
   toastClose: {
     border: 0,
     background: "transparent",
@@ -638,9 +656,9 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1,
     cursor: "pointer",
     padding: 4,
+    color: "#264653",
   },
 
-  // ✅ sticky header внутри карточки
   header: {
     position: "sticky",
     top: 0,
@@ -651,32 +669,33 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 10,
     marginBottom: 12,
     padding: "10px 0",
-    background: "rgba(255,255,255,0.65)",
-    backdropFilter: "blur(8px)",
-    WebkitBackdropFilter: "blur(8px)",
-    borderBottom: "1px solid rgba(0,0,0,0.06)",
+    background: "rgba(255,255,255,0.62)",
+    backdropFilter: "blur(10px)",
+    WebkitBackdropFilter: "blur(10px)",
+    borderBottom: "1px solid rgba(38,70,83,0.10)",
   },
 
-  title: { fontSize: 34, fontWeight: 900, letterSpacing: -0.6 },
+  title: { fontSize: 34, fontWeight: 950, letterSpacing: -0.6, color: "#264653" },
 
   tabs: { display: "flex", gap: 10 },
 
   tabBtn: {
-    border: "1px solid rgba(0,0,0,0.10)",
-    background: "rgba(255,255,255,0.75)",
+    border: "1px solid rgba(38,70,83,0.18)",
+    background: "rgba(255,255,255,0.78)",
     padding: "10px 16px",
     borderRadius: 999,
-    fontWeight: 900,
+    fontWeight: 950,
     cursor: "pointer",
-    boxShadow: "0 8px 18px rgba(0,0,0,0.10)",
-    backdropFilter: "blur(8px)",
-    WebkitBackdropFilter: "blur(8px)",
+    boxShadow: "0 8px 18px rgba(38,70,83,0.16)",
+    color: "#264653",
+    backdropFilter: "blur(10px)",
+    WebkitBackdropFilter: "blur(10px)",
   },
   tabActive: {
-    borderColor: "rgba(31,122,31,0.22)",
-    background: "linear-gradient(180deg, rgba(47,188,47,0.95) 0%, rgba(31,122,31,0.98) 100%)",
-    color: "#fff",
-    boxShadow: "0 12px 26px rgba(31,122,31,0.22)",
+    borderColor: "rgba(42,157,143,0.35)",
+    background: "linear-gradient(180deg, rgba(42,157,143,0.98) 0%, rgba(38,70,83,0.98) 140%)",
+    color: "#ffffff",
+    boxShadow: "0 14px 30px rgba(42,157,143,0.26)",
   },
 
   chipsRow: {
@@ -688,40 +707,40 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   chip: {
-    border: "1px solid rgba(0,0,0,0.10)",
-    background: "rgba(255,255,255,0.70)",
+    border: "1px solid rgba(38,70,83,0.18)",
+    background: "rgba(255,255,255,0.74)",
     padding: "9px 12px",
     borderRadius: 999,
-    fontWeight: 900,
+    fontWeight: 950,
     cursor: "pointer",
     whiteSpace: "nowrap",
-    boxShadow: "0 8px 18px rgba(0,0,0,0.08)",
-    backdropFilter: "blur(8px)",
-    WebkitBackdropFilter: "blur(8px)",
+    boxShadow: "0 8px 18px rgba(38,70,83,0.14)",
+    color: "#264653",
+    backdropFilter: "blur(10px)",
+    WebkitBackdropFilter: "blur(10px)",
   },
   chipActive: {
-    background: "linear-gradient(180deg, rgba(47,188,47,0.95) 0%, rgba(31,122,31,0.98) 100%)",
-    color: "#fff",
-    borderColor: "rgba(31,122,31,0.22)",
-    boxShadow: "0 12px 26px rgba(31,122,31,0.20)",
+    background: "linear-gradient(180deg, rgba(42,157,143,0.98) 0%, rgba(38,70,83,0.98) 140%)",
+    color: "#ffffff",
+    borderColor: "rgba(42,157,143,0.35)",
+    boxShadow: "0 14px 30px rgba(42,157,143,0.22)",
   },
 
-  info: { padding: 12, fontWeight: 800 },
-  infoMuted: { padding: 8, color: "#555" },
+  info: { padding: 12, fontWeight: 900, color: "#264653" },
+  infoMuted: { padding: 8, color: "rgba(38,70,83,0.82)", fontWeight: 800 },
 
   list: { display: "grid", gap: 12 },
 
-  // ✅ СДЕЛАЛИ КАРТОЧКИ ТОВАРОВ ПОЛУПРОЗРАЧНЫМИ
   card: {
     background: "rgba(255,255,255,0.72)",
     borderRadius: 18,
     overflow: "hidden",
-    boxShadow: "0 12px 26px rgba(0,0,0,0.10)",
-    border: "1px solid rgba(0,0,0,0.08)",
+    boxShadow: "0 12px 26px rgba(38,70,83,0.16)",
+    border: "1px solid rgba(38,70,83,0.12)",
     display: "grid",
     gridTemplateColumns: "120px 1fr",
-    backdropFilter: "blur(8px)",
-    WebkitBackdropFilter: "blur(8px)",
+    backdropFilter: "blur(10px)",
+    WebkitBackdropFilter: "blur(10px)",
   },
 
   cardImg: { width: 120, height: 120, objectFit: "cover", display: "block" },
@@ -732,29 +751,29 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    background: "rgba(233,234,236,0.75)",
-    color: "#666",
-    fontWeight: 800,
-    backdropFilter: "blur(8px)",
-    WebkitBackdropFilter: "blur(8px)",
+    background: "rgba(233,196,106,0.22)",
+    color: "#264653",
+    fontWeight: 950,
+    backdropFilter: "blur(10px)",
+    WebkitBackdropFilter: "blur(10px)",
   },
 
   cardBody: { padding: 12, display: "flex", flexDirection: "column", gap: 8 },
-  cardName: { fontSize: 18, fontWeight: 900, lineHeight: 1.15 },
-  cardDesc: { fontSize: 13, color: "#333", lineHeight: 1.25 },
-  cardMeta: { color: "#222", fontWeight: 900 },
+  cardName: { fontSize: 18, fontWeight: 950, lineHeight: 1.15, color: "#264653" },
+  cardDesc: { fontSize: 13, color: "rgba(38,70,83,0.90)", lineHeight: 1.25, fontWeight: 700 },
+  cardMeta: { color: "#264653", fontWeight: 950 },
 
   buyBtn: {
     marginTop: 6,
-    background: "linear-gradient(180deg, #2fbc2f 0%, #1f7a1f 100%)",
+    background: "linear-gradient(180deg, rgba(42,157,143,1) 0%, rgba(38,70,83,1) 140%)",
     color: "#fff",
-    border: "1px solid rgba(255,255,255,0.25)",
+    border: "1px solid rgba(255,255,255,0.22)",
     borderRadius: 14,
     padding: "10px 14px",
-    fontWeight: 900,
+    fontWeight: 950,
     cursor: "pointer",
     width: "fit-content",
-    boxShadow: "0 12px 26px rgba(31,122,31,0.22)",
+    boxShadow: "0 14px 30px rgba(42,157,143,0.22)",
   },
 
   qtyInline: { display: "flex", alignItems: "center", gap: 8, marginTop: 6 },
@@ -763,10 +782,10 @@ const styles: Record<string, React.CSSProperties> = {
     background: "rgba(255,255,255,0.80)",
     borderRadius: 18,
     padding: 14,
-    boxShadow: "0 12px 26px rgba(0,0,0,0.10)",
-    border: "1px solid rgba(0,0,0,0.08)",
-    backdropFilter: "blur(8px)",
-    WebkitBackdropFilter: "blur(8px)",
+    boxShadow: "0 12px 26px rgba(38,70,83,0.16)",
+    border: "1px solid rgba(38,70,83,0.12)",
+    backdropFilter: "blur(10px)",
+    WebkitBackdropFilter: "blur(10px)",
   },
 
   cartRow: {
@@ -774,44 +793,46 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: 10,
     padding: "10px 0",
-    borderBottom: "1px solid rgba(0,0,0,0.08)",
+    borderBottom: "1px solid rgba(38,70,83,0.10)",
   },
-  cartName: { fontWeight: 900 },
-  cartMeta: { color: "#333", fontWeight: 800, fontSize: 13 },
+  cartName: { fontWeight: 950, color: "#264653" },
+  cartMeta: { color: "rgba(38,70,83,0.90)", fontWeight: 800, fontSize: 13 },
 
   qtyBox: { display: "flex", alignItems: "center", gap: 6 },
   qtyBtn: {
     width: 36,
     height: 36,
     borderRadius: 12,
-    border: "1px solid rgba(0,0,0,0.12)",
-    background: "rgba(255,255,255,0.78)",
+    border: "1px solid rgba(38,70,83,0.16)",
+    background: "rgba(255,255,255,0.82)",
     fontSize: 18,
     cursor: "pointer",
-    boxShadow: "0 10px 20px rgba(0,0,0,0.10)",
-    backdropFilter: "blur(8px)",
-    WebkitBackdropFilter: "blur(8px)",
+    boxShadow: "0 10px 20px rgba(38,70,83,0.14)",
+    color: "#264653",
+    backdropFilter: "blur(10px)",
+    WebkitBackdropFilter: "blur(10px)",
   },
-  qtyNum: { minWidth: 24, textAlign: "center", fontWeight: 900 },
+  qtyNum: { minWidth: 24, textAlign: "center", fontWeight: 950, color: "#264653" },
 
-  cartSum: { width: 90, textAlign: "right", fontWeight: 900 },
+  cartSum: { width: 90, textAlign: "right", fontWeight: 950, color: "#264653" },
 
   removeBtn: {
-    border: "1px solid rgba(0,0,0,0.12)",
-    background: "rgba(255,255,255,0.78)",
+    border: "1px solid rgba(231,111,81,0.55)",
+    background: "rgba(231,111,81,0.16)",
+    color: "#264653",
     borderRadius: 12,
     fontSize: 16,
     cursor: "pointer",
     padding: "6px 10px",
-    boxShadow: "0 10px 18px rgba(0,0,0,0.08)",
-    backdropFilter: "blur(8px)",
-    WebkitBackdropFilter: "blur(8px)",
+    boxShadow: "0 10px 18px rgba(231,111,81,0.18)",
+    backdropFilter: "blur(10px)",
+    WebkitBackdropFilter: "blur(10px)",
   },
 
   totalBlock: {
     marginTop: 10,
     paddingTop: 10,
-    borderTop: "1px solid rgba(0,0,0,0.08)",
+    borderTop: "1px solid rgba(38,70,83,0.10)",
     display: "grid",
     gap: 8,
   },
@@ -821,6 +842,8 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "space-between",
     alignItems: "center",
     fontSize: 15,
+    color: "#264653",
+    fontWeight: 800,
   },
   totalRowBig: {
     display: "flex",
@@ -829,75 +852,79 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 17,
     paddingTop: 6,
     marginTop: 4,
-    borderTop: "1px dashed rgba(0,0,0,0.18)",
+    borderTop: "1px dashed rgba(38,70,83,0.22)",
+    color: "#264653",
   },
 
   freeTag: {
     marginLeft: 8,
     padding: "3px 8px",
     borderRadius: 999,
-    background: "rgba(47,188,47,0.14)",
-    color: "#1f7a1f",
-    fontWeight: 900,
+    background: "rgba(233,196,106,0.30)",
+    color: "#264653",
+    fontWeight: 950,
     fontSize: 12,
+    border: "1px solid rgba(233,196,106,0.65)",
   },
   mutedTag: {
     marginLeft: 8,
     padding: "3px 8px",
     borderRadius: 999,
-    background: "rgba(0,0,0,0.06)",
-    color: "#333",
-    fontWeight: 800,
+    background: "rgba(244,162,97,0.18)",
+    color: "#264653",
+    fontWeight: 900,
     fontSize: 12,
+    border: "1px solid rgba(244,162,97,0.55)",
   },
 
-  h2: { fontSize: 20, fontWeight: 900, marginBottom: 10 },
+  h2: { fontSize: 20, fontWeight: 950, marginBottom: 10, color: "#264653" },
 
-  label: { display: "block", marginTop: 10, fontWeight: 900 },
+  label: { display: "block", marginTop: 10, fontWeight: 950, color: "#264653" },
   input: {
     width: "100%",
     padding: "12px 12px",
     borderRadius: 14,
-    border: "1px solid rgba(0,0,0,0.12)",
+    border: "1px solid rgba(38,70,83,0.16)",
     marginTop: 6,
     fontSize: 14,
-    background: "rgba(255,255,255,0.85)",
+    background: "rgba(255,255,255,0.86)",
     outline: "none",
-    boxShadow: "0 10px 18px rgba(0,0,0,0.06)",
-    backdropFilter: "blur(8px)",
-    WebkitBackdropFilter: "blur(8px)",
+    boxShadow: "0 10px 18px rgba(38,70,83,0.10)",
+    color: "#264653",
+    backdropFilter: "blur(10px)",
+    WebkitBackdropFilter: "blur(10px)",
   },
 
   primaryBtn: {
     width: "100%",
     marginTop: 12,
-    background: "linear-gradient(180deg, #2fbc2f 0%, #1f7a1f 100%)",
+    background: "linear-gradient(180deg, rgba(42,157,143,1) 0%, rgba(38,70,83,1) 140%)",
     color: "#fff",
-    border: "1px solid rgba(255,255,255,0.25)",
+    border: "1px solid rgba(255,255,255,0.22)",
     borderRadius: 16,
     padding: "13px 14px",
-    fontWeight: 900,
+    fontWeight: 950,
     cursor: "pointer",
-    boxShadow: "0 14px 30px rgba(31,122,31,0.22)",
+    boxShadow: "0 16px 34px rgba(42,157,143,0.24)",
   },
+
   secondaryBtn: {
     width: "100%",
     marginTop: 10,
-    background: "rgba(255,255,255,0.82)",
-    color: "#111",
-    border: "1px solid rgba(0,0,0,0.12)",
+    background: "rgba(244,162,97,0.18)",
+    color: "#264653",
+    border: "1px solid rgba(244,162,97,0.55)",
     borderRadius: 16,
     padding: "13px 14px",
-    fontWeight: 900,
+    fontWeight: 950,
     cursor: "pointer",
-    boxShadow: "0 10px 22px rgba(0,0,0,0.08)",
-    backdropFilter: "blur(8px)",
-    WebkitBackdropFilter: "blur(8px)",
+    boxShadow: "0 12px 26px rgba(244,162,97,0.18)",
+    backdropFilter: "blur(10px)",
+    WebkitBackdropFilter: "blur(10px)",
   },
 
-  note: { marginTop: 10, fontSize: 12, color: "#555" },
+  note: { marginTop: 10, fontSize: 12, color: "rgba(38,70,83,0.86)", fontWeight: 700 },
 
-  // ✅ Плавающая кнопка корзины (ездит при скролле)
   floatingCart: {
     position: "fixed",
     left: "50%",
@@ -906,13 +933,14 @@ const styles: Record<string, React.CSSProperties> = {
     zIndex: 9999,
     maxWidth: 520,
     width: "calc(100% - 32px)",
-    border: "1px solid rgba(0,0,0,0.12)",
-    background: "rgba(255,255,255,0.85)",
+    border: "1px solid rgba(38,70,83,0.18)",
+    background: "linear-gradient(180deg, rgba(233,196,106,0.92) 0%, rgba(244,162,97,0.90) 100%)",
+    color: "#264653",
     borderRadius: 999,
     padding: "12px 14px",
     fontWeight: 950,
     cursor: "pointer",
-    boxShadow: "0 18px 38px rgba(0,0,0,0.18)",
+    boxShadow: "0 18px 38px rgba(38,70,83,0.22)",
     backdropFilter: "blur(10px)",
     WebkitBackdropFilter: "blur(10px)",
   },
