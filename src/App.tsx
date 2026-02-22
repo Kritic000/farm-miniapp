@@ -19,7 +19,6 @@ function getTelegramUserSafe() {
   const w: any = window as any;
   const tg = w?.Telegram?.WebApp;
 
-  // Если открыто внутри Telegram Mini App
   const user = tg?.initDataUnsafe?.user;
   if (user) {
     return {
@@ -31,7 +30,6 @@ function getTelegramUserSafe() {
     };
   }
 
-  // Если открыто в браузере
   return {
     id: "",
     username: "",
@@ -39,6 +37,23 @@ function getTelegramUserSafe() {
     last_name: "",
     language_code: "",
   };
+}
+
+// --- нормализация пути к картинке из Google Sheets ---
+// В Vite всё из папки /public доступно по корню сайта: /images/xxx.jpg
+function normalizeImagePath(raw?: string): string | undefined {
+  if (!raw) return undefined;
+  let s = String(raw).trim();
+  if (!s) return undefined;
+
+  // если в таблице указали "public/images/..."
+  if (s.startsWith("public/")) s = s.slice("public/".length);
+
+  // если забыли ведущий "/"
+  if (!s.startsWith("/") && !s.startsWith("http")) s = "/" + s;
+
+  // пример: "/images/xxx.jpg"
+  return s;
 }
 
 export default function App() {
@@ -58,7 +73,14 @@ export default function App() {
       try {
         const res = await fetch(`${API_URL}?action=products`, { method: "GET" });
         const data = await res.json();
-        setProducts(Array.isArray(data.products) ? data.products : []);
+
+        const list: Product[] = Array.isArray(data.products) ? data.products : [];
+        // нормализуем image сразу
+        const normalized = list.map((p) => ({
+          ...p,
+          image: normalizeImagePath(p.image),
+        }));
+        setProducts(normalized);
       } catch (e) {
         setProducts([]);
       } finally {
@@ -96,6 +118,10 @@ export default function App() {
         .map((i) => (i.id === id ? { ...i, qty: i.qty + delta } : i))
         .filter((i) => i.qty > 0)
     );
+  };
+
+  const removeItem = (id: string) => {
+    setCart((prev) => prev.filter((i) => i.id !== id));
   };
 
   const submitOrder = async () => {
@@ -192,7 +218,24 @@ export default function App() {
                   <div style={styles.cardRow}>
                     <div style={styles.imageBox}>
                       {p.image ? (
-                        <img src={p.image} alt={p.name} style={styles.image} />
+                        <img
+                          src={p.image}
+                          alt={p.name}
+                          style={styles.image}
+                          onError={(e) => {
+                            // если файл не найден — показываем "Нет фото"
+                            (e.currentTarget as HTMLImageElement).style.display = "none";
+                            const parent = e.currentTarget.parentElement;
+                            if (parent && !parent.querySelector("[data-nophoto='1']")) {
+                              const div = document.createElement("div");
+                              div.setAttribute("data-nophoto", "1");
+                              div.style.cssText =
+                                "color:#7a8795;text-align:center;font-weight:700;line-height:1.2;";
+                              div.innerHTML = "<div style='font-size:28px'>🖼️</div><div>Нет фото</div>";
+                              parent.appendChild(div);
+                            }
+                          }}
+                        />
                       ) : (
                         <div style={styles.noPhoto}>
                           <div style={{ fontSize: 28 }}>🖼️</div>
@@ -237,8 +280,56 @@ export default function App() {
         <div style={styles.checkout}>
           <h3 style={{ margin: "6px 0 12px" }}>Оформление</h3>
 
+          {/* ✅ БЛОК: что заказано */}
+          <div style={styles.cartBox}>
+            <div style={styles.cartTitle}>Ваш заказ</div>
+
+            {cart.length === 0 ? (
+              <div style={{ padding: "10px 0", color: "#5d6a79", fontWeight: 650 }}>
+                Корзина пустая. Перейди во вкладку «Товары».
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {cart.map((i) => (
+                  <div key={i.id} style={styles.cartItem}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 900, lineHeight: 1.15 }}>{i.name}</div>
+                      <div style={{ color: "#5d6a79", fontWeight: 650, fontSize: 12 }}>
+                        {i.price} ₽ / {i.unit}
+                      </div>
+                      <div style={{ marginTop: 6, fontWeight: 900 }}>
+                        Сумма: {i.price * i.qty} ₽
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+                      <div style={styles.qtyBox}>
+                        <button style={styles.qtyBtn} onClick={() => changeQty(i.id, -1)}>
+                          −
+                        </button>
+                        <span style={styles.qtyNum}>{i.qty}</span>
+                        <button style={styles.qtyBtn} onClick={() => changeQty(i.id, 1)}>
+                          +
+                        </button>
+                      </div>
+
+                      <button style={styles.removeBtn} onClick={() => removeItem(i.id)}>
+                        Удалить
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <label style={styles.label}>Имя *</label>
-          <input style={styles.input} placeholder="Как к вам обращаться?" value={name} onChange={(e) => setName(e.target.value)} />
+          <input
+            style={styles.input}
+            placeholder="Как к вам обращаться?"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
 
           <label style={styles.label}>Телефон *</label>
           <input style={styles.input} placeholder="+7..." value={phone} onChange={(e) => setPhone(e.target.value)} />
@@ -264,7 +355,7 @@ export default function App() {
             <div style={{ fontWeight: 800 }}>{total} ₽</div>
           </div>
 
-          <button style={styles.submit} onClick={submitOrder}>
+          <button style={styles.submit} onClick={submitOrder} disabled={cart.length === 0}>
             Подтвердить заказ
           </button>
 
@@ -367,7 +458,7 @@ const styles: any = {
     width: 180,
   },
 
-  qtyBox: { display: "flex", gap: 10, alignItems: "center", marginTop: 6 },
+  qtyBox: { display: "flex", gap: 10, alignItems: "center" },
   qtyBtn: {
     width: 42,
     height: 42,
@@ -386,6 +477,31 @@ const styles: any = {
     padding: 14,
     boxShadow: "0 10px 24px rgba(0,0,0,0.06)",
   },
+
+  cartBox: {
+    border: "1px solid rgba(0,0,0,0.08)",
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: 12,
+    background: "#f8fafc",
+  },
+  cartTitle: { fontWeight: 1000, marginBottom: 10, fontSize: 16 },
+  cartItem: {
+    display: "flex",
+    gap: 10,
+    padding: 10,
+    borderRadius: 14,
+    background: "#fff",
+    border: "1px solid rgba(0,0,0,0.06)",
+  },
+  removeBtn: {
+    border: "1px solid rgba(0,0,0,0.12)",
+    background: "#fff",
+    borderRadius: 12,
+    padding: "8px 10px",
+    fontWeight: 800,
+  },
+
   label: { display: "block", fontWeight: 900, marginTop: 10, marginBottom: 6 },
   input: {
     width: "100%",
@@ -416,6 +532,7 @@ const styles: any = {
     border: "none",
     fontWeight: 1000,
     fontSize: 16,
+    opacity: 1,
   },
   note: { marginTop: 10, color: "#5d6a79", fontWeight: 650, fontSize: 12 },
 };
