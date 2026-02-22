@@ -17,32 +17,182 @@ type CartItem = {
   qty: number;
 };
 
+type TgUser = {
+  id?: number;
+  username?: string;
+  first_name?: string;
+  last_name?: string;
+};
+
+function getTgUser(): TgUser | null {
+  const w = window as any;
+  const tg = w?.Telegram?.WebApp;
+  const u = tg?.initDataUnsafe?.user;
+  return u || null;
+}
+
 function money(n: number) {
   return new Intl.NumberFormat("ru-RU").format(Math.round(n));
 }
 
+type Toast = { type: "error" | "success" | "info"; text: string } | null;
+
+const PRODUCTS_CACHE_KEY = "farm_products_cache_v1";
+const PRODUCTS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 минут
+
+const DELIVERY_FEE = 200;
+const FREE_DELIVERY_FROM = 2000;
+
+function loadProductsCache(): { ts: number; products: Product[] } | null {
+  try {
+    const raw = localStorage.getItem(PRODUCTS_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.ts || !Array.isArray(parsed?.products)) return null;
+    return { ts: parsed.ts, products: parsed.products };
+  } catch {
+    return null;
+  }
+}
+
+function saveProductsCache(products: Product[]) {
+  try {
+    localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), products }));
+  } catch {}
+}
+
+// нормализуем путь картинки из таблицы:
+// - "public/images/xxx.jpg" -> "/images/xxx.jpg"
+// - "/images/xxx.jpg" -> "/images/xxx.jpg"
+// - "images/xxx.jpg" -> "/images/xxx.jpg"
+function normalizeImagePath(img?: string): string | undefined {
+  const s = String(img || "").trim();
+  if (!s) return undefined;
+  if (s.startsWith("http://") || s.startsWith("https://")) return s;
+  if (s.startsWith("/")) return s;
+  if (s.startsWith("public/")) return "/" + s.replace(/^public\//, "");
+  return "/" + s;
+}
+
+// fetch с таймаутом (Apps Script может “просыпаться” долго)
+async function fetchWithTimeout(
+  input: RequestInfo,
+  init: RequestInit & { timeoutMs?: number } = {}
+) {
+  const { timeoutMs = 25000, ...rest } = init; // 25 секунд
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(input, { ...rest, signal: controller.signal });
+    return res;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 export default function App() {
+  // === ВАЖНО: токен должен совпадать с API_TOKEN в Apps Script ===
   const API_TOKEN = "Kjhytccb18@";
 
-  const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeCategory, setActiveCategory] = useState("Все");
-  const [tab, setTab] = useState<"catalog" | "cart">("catalog");
+  const [loadingHint, setLoadingHint] = useState<string>("");
+  const [error, setError] = useState<string>("");
+  const [toast, setToast] = useState<Toast>(null);
+
+  const [products, setProducts] = useState<Product[]>([]);
+  const [activeCategory, setActiveCategory] = useState<string>("Все");
+  const [tab, setTab] = useState<"catalog" | "cart" | "checkout">("catalog");
+
   const [cart, setCart] = useState<Record<string, CartItem>>({});
 
+  const [address, setAddress] = useState("");
+  const [comment, setComment] = useState("");
+
+  const [customerName, setCustomerName] = useState("");
+  const [phone, setPhone] = useState("");
+
+  const [sending, setSending] = useState(false);
+
+  // Telegram init
   useEffect(() => {
-    const load = async () => {
+    const w = window as any;
+    const tg = w?.Telegram?.WebApp;
+    if (tg) {
       try {
-        const res = await fetch(`${API_URL}?action=products`);
+        tg.ready();
+        tg.expand();
+      } catch {}
+    }
+  }, []);
+
+  // Автозакрытие toast
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 2500);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  // Быстрая загрузка ассортимента: сначала кэш, потом сеть
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      // 1) попробуем кэш
+      const cached = loadProductsCache();
+      const hasFreshCache = !!(cached && Date.now() - cached.ts < PRODUCTS_CACHE_TTL_MS);
+
+      try {
+        setLoading(true);
+        setError("");
+        setLoadingHint("");
+
+        if (hasFreshCache && cached) {
+          setProducts(cached.products);
+          setLoading(false);
+          setLoadingHint("Обновляем ассортимент…");
+        }
+
+        // 2) сеть (с таймаутом)
+        const url = `${API_URL}?action=products&ts=${Date.now()}`;
+        const res = await fetchWithTimeout(url, { method: "GET", timeoutMs: 25000 });
         const data = await res.json();
-        setProducts(data.products || []);
-      } catch {
-        alert("Ошибка загрузки");
-      } finally {
+
+        if (data?.error) throw new Error(data.error);
+
+        const list: Product[] = (data.products || []).map((p: Product) => ({
+          ...p,
+          image: normalizeImagePath(p.image),
+        }));
+
+        if (cancelled) return;
+
+        setProducts(list);
+        saveProductsCache(list);
+
         setLoading(false);
+        setLoadingHint("");
+      } catch (e: any) {
+        if (cancelled) return;
+
+        // если таймаут, но кэш уже показали — не пугаем ошибкой
+        if (e?.name === "AbortError" && hasFreshCache) {
+          setLoading(false);
+          setError("");
+          setLoadingHint("Сервер отвечает медленно. Показан сохранённый ассортимент.");
+          return;
+        }
+
+        if (e?.name === "AbortError") setError("Сервер долго отвечает. Попробуйте ещё раз.");
+        else setError(e?.message || "Ошибка загрузки товаров");
+
+        setLoading(false);
+        setLoadingHint("");
       }
+    })();
+
+    return () => {
+      cancelled = true;
     };
-    load();
   }, []);
 
   const categories = useMemo(() => {
@@ -51,136 +201,381 @@ export default function App() {
     return ["Все", ...Array.from(set)];
   }, [products]);
 
-  const filtered = useMemo(() => {
+  const filteredProducts = useMemo(() => {
     if (activeCategory === "Все") return products;
     return products.filter((p) => p.category === activeCategory);
   }, [products, activeCategory]);
 
-  const cartItems = Object.values(cart);
-  const subtotal = cartItems.reduce(
-    (s, it) => s + it.qty * it.product.price,
-    0
-  );
+  const cartItems = useMemo(() => Object.values(cart), [cart]);
 
-  const delivery = subtotal > 0 && subtotal < 2000 ? 200 : 0;
-  const total = subtotal + delivery;
+  const cartCount = useMemo(() => cartItems.reduce((s, it) => s + it.qty, 0), [cartItems]);
 
-  function add(p: Product) {
+  const total = useMemo(() => cartItems.reduce((s, it) => s + it.qty * it.product.price, 0), [cartItems]);
+
+  const delivery = useMemo(() => {
+    if (total <= 0) return 0;
+    return total < FREE_DELIVERY_FROM ? DELIVERY_FEE : 0;
+  }, [total]);
+
+  const grandTotal = useMemo(() => total + delivery, [total, delivery]);
+
+  function addToCart(p: Product) {
     setCart((prev) => {
       const next = { ...prev };
       const cur = next[p.id];
       next[p.id] = { product: p, qty: (cur?.qty || 0) + 1 };
       return next;
     });
+    setToast({ type: "info", text: "Добавлено в корзину" });
   }
 
-  function changeQty(id: string, qty: number) {
+  function setQty(productId: string, qty: number) {
     setCart((prev) => {
       const next = { ...prev };
-      if (qty <= 0) delete next[id];
-      else next[id] = { ...next[id], qty };
+      if (qty <= 0) delete next[productId];
+      else next[productId] = { ...next[productId], qty };
       return next;
     });
   }
 
+  function qtyOf(productId: string) {
+    return cart[productId]?.qty || 0;
+  }
+
+  function validateCheckout(): string | null {
+    if (customerName.trim().length < 2) return "Укажи имя (минимум 2 символа).";
+    if (phone.trim().length < 6) return "Укажи телефон (минимум 6 символов).";
+    if (address.trim().length < 5) return "Укажи адрес доставки (минимум 5 символов).";
+    if (cartItems.length === 0) return "Корзина пустая.";
+    return null;
+  }
+
+  async function submitOrder() {
+    const validationError = validateCheckout();
+    if (validationError) {
+      setToast({ type: "error", text: validationError });
+      return;
+    }
+
+    const tg = getTgUser();
+
+    const payload = {
+      token: API_TOKEN,
+      tg: tg || {},
+      name: customerName.trim(),
+      phone: phone.trim(),
+      address: address.trim(),
+      comment: comment.trim(),
+      items: cartItems.map((it) => ({
+        id: it.product.id,
+        name: it.product.name,
+        unit: it.product.unit,
+        price: it.product.price,
+        qty: it.qty,
+        sum: it.qty * it.product.price,
+      })),
+      total,       // товары
+      delivery,    // доставка
+      grandTotal,  // итого
+    };
+
+    try {
+      setSending(true);
+
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      if (data?.error) throw new Error(data.error);
+
+      setToast({ type: "success", text: "✅ Заказ отправлен! Мы свяжемся для подтверждения." });
+
+      setCart({});
+      setAddress("");
+      setComment("");
+      setCustomerName("");
+      setPhone("");
+      setTab("catalog");
+    } catch (e: any) {
+      setToast({ type: "error", text: `Не удалось отправить заказ: ${e?.message || "Ошибка"}` });
+    } finally {
+      setSending(false);
+    }
+  }
+
   return (
     <div style={styles.page}>
+      {/* Toast */}
+      {toast && (
+        <div
+          style={{
+            ...styles.toast,
+            ...(toast.type === "error" ? styles.toastError : {}),
+            ...(toast.type === "success" ? styles.toastSuccess : {}),
+            ...(toast.type === "info" ? styles.toastInfo : {}),
+          }}
+        >
+          <div style={{ fontWeight: 900 }}>{toast.text}</div>
+          <button style={styles.toastClose} onClick={() => setToast(null)}>
+            ×
+          </button>
+        </div>
+      )}
+
+      {/* Вариант B: карточка поверх фона */}
       <div style={styles.container}>
         <div style={styles.header}>
           <div style={styles.title}>Каталог</div>
+
           <div style={styles.tabs}>
             <button
-              style={{
-                ...styles.tabBtn,
-                ...(tab === "catalog" ? styles.tabActive : {}),
-              }}
+              style={{ ...styles.tabBtn, ...(tab === "catalog" ? styles.tabActive : {}) }}
               onClick={() => setTab("catalog")}
             >
               Товары
             </button>
+
             <button
-              style={{
-                ...styles.tabBtn,
-                ...(tab === "cart" ? styles.tabActive : {}),
-              }}
+              style={{ ...styles.tabBtn, ...(tab === "cart" || tab === "checkout" ? styles.tabActive : {}) }}
               onClick={() => setTab("cart")}
             >
-              🛒 Корзина ({cartItems.length})
+              🛒 Корзина ({cartCount})
             </button>
           </div>
         </div>
 
-        {loading && <div>Загрузка...</div>}
+        {loading && <div style={styles.info}>Загрузка ассортимента…</div>}
+        {!loading && loadingHint && <div style={styles.infoMuted}>{loadingHint}</div>}
+        {error && <div style={{ ...styles.info, color: "#b00020" }}>{error}</div>}
 
-        {!loading && tab === "catalog" && (
+        {!loading && !error && (
           <>
-            <div style={styles.chips}>
-              {categories.map((c) => (
-                <button
-                  key={c}
-                  style={{
-                    ...styles.chip,
-                    ...(activeCategory === c ? styles.chipActive : {}),
-                  }}
-                  onClick={() => setActiveCategory(c)}
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
+            {tab === "catalog" && (
+              <>
+                <div style={styles.chipsRow}>
+                  {categories.map((c) => (
+                    <button
+                      key={c}
+                      style={{ ...styles.chip, ...(activeCategory === c ? styles.chipActive : {}) }}
+                      onClick={() => setActiveCategory(c)}
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
 
-            {filtered.map((p) => (
-              <div key={p.id} style={styles.card}>
-                <div style={styles.cardBody}>
-                  <div style={styles.cardName}>{p.name}</div>
-                  <div style={styles.price}>
-                    {money(p.price)} ₽ / {p.unit}
+                <div style={styles.list}>
+                  {filteredProducts.map((p) => {
+                    const q = qtyOf(p.id);
+
+                    return (
+                      <div key={p.id} style={styles.card}>
+                        {p.image ? (
+                          <img
+                            src={p.image}
+                            alt={p.name}
+                            style={styles.cardImg}
+                            loading="lazy"
+                            decoding="async"
+                            onError={(e) => {
+                              (e.currentTarget as HTMLImageElement).style.display = "none";
+                            }}
+                          />
+                        ) : (
+                          <div style={styles.cardImgPlaceholder}>Нет фото</div>
+                        )}
+
+                        <div style={styles.cardBody}>
+                          <div style={styles.cardName}>{p.name}</div>
+
+                          {p.description ? <div style={styles.cardDesc}>{p.description}</div> : null}
+
+                          <div style={styles.cardMeta}>
+                            {money(p.price)} ₽ / {p.unit}
+                          </div>
+
+                          {q === 0 ? (
+                            <button style={styles.buyBtn} onClick={() => addToCart(p)}>
+                              В корзину
+                            </button>
+                          ) : (
+                            <div style={styles.qtyInline}>
+                              <button style={styles.qtyBtn} onClick={() => setQty(p.id, q - 1)}>
+                                −
+                              </button>
+                              <div style={styles.qtyNum}>{q}</div>
+                              <button style={styles.qtyBtn} onClick={() => setQty(p.id, q + 1)}>
+                                +
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {tab === "cart" && (
+              <div style={styles.panel}>
+                {cartItems.length === 0 ? (
+                  <div style={styles.info}>Корзина пустая</div>
+                ) : (
+                  <>
+                    {cartItems.map((it) => (
+                      <div key={it.product.id} style={styles.cartRow}>
+                        <div style={{ flex: 1 }}>
+                          <div style={styles.cartName}>{it.product.name}</div>
+                          <div style={styles.cartMeta}>
+                            {money(it.product.price)} ₽ / {it.product.unit}
+                          </div>
+                        </div>
+
+                        <div style={styles.qtyBox}>
+                          <button style={styles.qtyBtn} onClick={() => setQty(it.product.id, it.qty - 1)}>
+                            −
+                          </button>
+                          <div style={styles.qtyNum}>{it.qty}</div>
+                          <button style={styles.qtyBtn} onClick={() => setQty(it.product.id, it.qty + 1)}>
+                            +
+                          </button>
+                        </div>
+
+                        <div style={styles.cartSum}>{money(it.qty * it.product.price)} ₽</div>
+
+                        <button style={styles.removeBtn} onClick={() => setQty(it.product.id, 0)}>
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+
+                    <div style={styles.totalBlock}>
+                      <div style={styles.totalRow}>
+                        <div>Товары</div>
+                        <div style={{ fontWeight: 900 }}>{money(total)} ₽</div>
+                      </div>
+
+                      <div style={styles.totalRow}>
+                        <div>
+                          Доставка{" "}
+                          {delivery === 0 ? (
+                            <span style={styles.freeTag}>бесплатно</span>
+                          ) : (
+                            <span style={styles.mutedTag}>до {money(FREE_DELIVERY_FROM)} ₽</span>
+                          )}
+                        </div>
+                        <div style={{ fontWeight: 900 }}>{money(delivery)} ₽</div>
+                      </div>
+
+                      <div style={styles.totalRowBig}>
+                        <div>Итого</div>
+                        <div style={{ fontWeight: 950 }}>{money(grandTotal)} ₽</div>
+                      </div>
+                    </div>
+
+                    <button style={styles.primaryBtn} onClick={() => setTab("checkout")}>
+                      Оформить
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+
+            {tab === "checkout" && (
+              <div style={styles.panel}>
+                <div style={styles.h2}>Оформление</div>
+
+                <label style={styles.label}>
+                  Имя <span style={{ color: "#b00020" }}>*</span>
+                </label>
+                <input
+                  style={styles.input}
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  placeholder="Как к вам обращаться?"
+                  autoComplete="name"
+                />
+
+                <label style={styles.label}>
+                  Телефон <span style={{ color: "#b00020" }}>*</span>
+                </label>
+                <input
+                  style={styles.input}
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="+7..."
+                  autoComplete="tel"
+                  inputMode="tel"
+                />
+
+                <label style={styles.label}>
+                  Адрес доставки <span style={{ color: "#b00020" }}>*</span>
+                </label>
+                <input
+                  style={styles.input}
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder="улица, дом, подъезд, этаж, кв."
+                  autoComplete="street-address"
+                />
+
+                <label style={styles.label}>Комментарий (необязательно)</label>
+                <input
+                  style={styles.input}
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  placeholder="код домофона, удобное время"
+                />
+
+                <div style={styles.totalBlock}>
+                  <div style={styles.totalRow}>
+                    <div>Товары</div>
+                    <div style={{ fontWeight: 900 }}>{money(total)} ₽</div>
                   </div>
-                  <button style={styles.buyBtn} onClick={() => add(p)}>
-                    В корзину
-                  </button>
-                </div>
-              </div>
-            ))}
-          </>
-        )}
 
-        {!loading && tab === "cart" && (
-          <>
-            {cartItems.map((it) => (
-              <div key={it.product.id} style={styles.cartRow}>
-                <div style={{ flex: 1 }}>{it.product.name}</div>
-                <div>
-                  <button
-                    style={styles.qtyBtn}
-                    onClick={() =>
-                      changeQty(it.product.id, it.qty - 1)
-                    }
-                  >
-                    −
-                  </button>
-                  {it.qty}
-                  <button
-                    style={styles.qtyBtn}
-                    onClick={() =>
-                      changeQty(it.product.id, it.qty + 1)
-                    }
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-            ))}
+                  <div style={styles.totalRow}>
+                    <div>
+                      Доставка{" "}
+                      {delivery === 0 ? (
+                        <span style={styles.freeTag}>бесплатно</span>
+                      ) : (
+                        <span style={styles.mutedTag}>до {money(FREE_DELIVERY_FROM)} ₽</span>
+                      )}
+                    </div>
+                    <div style={{ fontWeight: 900 }}>{money(delivery)} ₽</div>
+                  </div>
 
-            <div style={styles.totalBox}>
-              <div>Товары: {money(subtotal)} ₽</div>
-              {delivery > 0 && (
-                <div>Доставка: {money(delivery)} ₽</div>
-              )}
-              <div style={{ fontWeight: 800 }}>
-                Итого: {money(total)} ₽
+                  <div style={styles.totalRowBig}>
+                    <div>Итого</div>
+                    <div style={{ fontWeight: 950 }}>{money(grandTotal)} ₽</div>
+                  </div>
+                </div>
+
+                <button
+                  style={{
+                    ...styles.primaryBtn,
+                    opacity: sending ? 0.7 : 1,
+                    cursor: sending ? "not-allowed" : "pointer",
+                  }}
+                  onClick={submitOrder}
+                  disabled={sending}
+                >
+                  {sending ? "Отправляем..." : "Подтвердить заказ"}
+                </button>
+
+                <button style={styles.secondaryBtn} onClick={() => setTab("cart")} disabled={sending}>
+                  Назад в корзину
+                </button>
+
+                <div style={styles.note}>Оплата пока не принимается в приложении — мы свяжемся после оформления.</div>
               </div>
-            </div>
+            )}
           </>
         )}
       </div>
@@ -189,9 +584,12 @@ export default function App() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
+  // Вариант B: фон картинка + осветляющая вуаль
   page: {
-    minHeight: "100vh",
+    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
     padding: 16,
+    minHeight: "100vh",
+
     backgroundImage:
       "linear-gradient(rgba(255,255,255,0.55), rgba(255,255,255,0.85)), url('/images/bg-farm.png')",
     backgroundSize: "cover",
@@ -199,105 +597,269 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundRepeat: "no-repeat",
   },
 
+  // карточка поверх фона
   container: {
     maxWidth: 520,
     margin: "0 auto",
-    background: "rgba(255,255,255,0.9)",
+    background: "rgba(255,255,255,0.88)",
     borderRadius: 22,
-    padding: 16,
+    padding: 14,
     boxShadow: "0 20px 40px rgba(0,0,0,0.15)",
+    border: "1px solid rgba(255,255,255,0.6)",
+    backdropFilter: "blur(8px)",
+    WebkitBackdropFilter: "blur(8px)",
+  },
+
+  // toast
+  toast: {
+    position: "sticky",
+    top: 8,
+    zIndex: 9999,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    padding: "12px 12px",
+    borderRadius: 14,
+    boxShadow: "0 12px 26px rgba(0,0,0,0.18)",
+    marginBottom: 10,
+    border: "1px solid rgba(0,0,0,0.10)",
+    background: "#fff",
+  },
+  toastError: { background: "rgba(255,232,234,0.95)", color: "#7a0010" },
+  toastSuccess: { background: "rgba(231,246,234,0.95)", color: "#0e4b1b" },
+  toastInfo: { background: "rgba(238,242,255,0.95)", color: "#1c2b6b" },
+  toastClose: {
+    border: 0,
+    background: "transparent",
+    fontSize: 22,
+    lineHeight: 1,
+    cursor: "pointer",
+    padding: 4,
   },
 
   header: {
     display: "flex",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 14,
+    justifyContent: "space-between",
+    gap: 10,
+    marginBottom: 12,
   },
+  title: { fontSize: 34, fontWeight: 900, letterSpacing: -0.6 },
 
-  title: {
-    fontSize: 32,
-    fontWeight: 900,
-  },
-
-  tabs: { display: "flex", gap: 8 },
+  tabs: { display: "flex", gap: 10 },
 
   tabBtn: {
+    border: "1px solid rgba(0,0,0,0.10)",
+    background: "#ffffff",
+    padding: "10px 16px",
     borderRadius: 999,
-    padding: "10px 14px",
-    border: "1px solid #ddd",
-    background: "#fff",
+    fontWeight: 900,
     cursor: "pointer",
-    fontWeight: 700,
+    boxShadow: "0 8px 18px rgba(0,0,0,0.10)",
   },
-
   tabActive: {
-    background: "linear-gradient(180deg,#2fbc2f,#1f7a1f)",
+    borderColor: "rgba(31,122,31,0.22)",
+    background: "linear-gradient(180deg, rgba(47,188,47,0.95) 0%, rgba(31,122,31,0.98) 100%)",
     color: "#fff",
+    boxShadow: "0 12px 26px rgba(31,122,31,0.22)",
   },
 
-  chips: {
+  chipsRow: {
     display: "flex",
-    gap: 8,
-    marginBottom: 12,
+    gap: 10,
     overflowX: "auto",
+    paddingBottom: 10,
+    marginBottom: 10,
   },
 
   chip: {
-    borderRadius: 999,
-    padding: "8px 12px",
-    border: "1px solid #ddd",
+    border: "1px solid rgba(0,0,0,0.10)",
     background: "#fff",
+    padding: "9px 12px",
+    borderRadius: 999,
+    fontWeight: 900,
     cursor: "pointer",
-    fontWeight: 700,
+    whiteSpace: "nowrap",
+    boxShadow: "0 8px 18px rgba(0,0,0,0.08)",
+  },
+  chipActive: {
+    background: "linear-gradient(180deg, rgba(47,188,47,0.95) 0%, rgba(31,122,31,0.98) 100%)",
+    color: "#fff",
+    borderColor: "rgba(31,122,31,0.22)",
+    boxShadow: "0 12px 26px rgba(31,122,31,0.20)",
   },
 
-  chipActive: {
-    background: "#1f7a1f",
-    color: "#fff",
-  },
+  info: { padding: 12, fontWeight: 800 },
+  infoMuted: { padding: 8, color: "#555" },
+
+  list: { display: "grid", gap: 12 },
 
   card: {
     background: "#fff",
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 12,
-    boxShadow: "0 10px 20px rgba(0,0,0,0.08)",
+    borderRadius: 18,
+    overflow: "hidden",
+    boxShadow: "0 12px 26px rgba(0,0,0,0.10)",
+    border: "1px solid rgba(0,0,0,0.08)",
+    display: "grid",
+    gridTemplateColumns: "120px 1fr",
   },
-
-  cardBody: { display: "flex", flexDirection: "column", gap: 8 },
-
-  cardName: { fontWeight: 900 },
-
-  price: { fontWeight: 700 },
+  cardImg: { width: 120, height: 120, objectFit: "cover", display: "block" },
+  cardImgPlaceholder: {
+    width: 120,
+    height: 120,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "linear-gradient(180deg, rgba(233,234,236,1) 0%, rgba(225,226,228,1) 100%)",
+    color: "#666",
+    fontWeight: 800,
+  },
+  cardBody: { padding: 12, display: "flex", flexDirection: "column", gap: 8 },
+  cardName: { fontSize: 18, fontWeight: 900, lineHeight: 1.15 },
+  cardDesc: { fontSize: 13, color: "#333", lineHeight: 1.25 },
+  cardMeta: { color: "#222", fontWeight: 900 },
 
   buyBtn: {
-    background: "linear-gradient(180deg,#2fbc2f,#1f7a1f)",
+    marginTop: 6,
+    background: "linear-gradient(180deg, #2fbc2f 0%, #1f7a1f 100%)",
     color: "#fff",
-    border: 0,
+    border: "1px solid rgba(255,255,255,0.25)",
     borderRadius: 14,
     padding: "10px 14px",
+    fontWeight: 900,
     cursor: "pointer",
-    fontWeight: 800,
+    width: "fit-content",
+    boxShadow: "0 12px 26px rgba(31,122,31,0.22)",
+  },
+
+  qtyInline: { display: "flex", alignItems: "center", gap: 8, marginTop: 6 },
+
+  panel: {
+    background: "#fff",
+    borderRadius: 18,
+    padding: 14,
+    boxShadow: "0 12px 26px rgba(0,0,0,0.10)",
+    border: "1px solid rgba(0,0,0,0.08)",
   },
 
   cartRow: {
     display: "flex",
-    justifyContent: "space-between",
-    marginBottom: 8,
+    alignItems: "center",
+    gap: 10,
+    padding: "10px 0",
+    borderBottom: "1px solid rgba(0,0,0,0.08)",
   },
+  cartName: { fontWeight: 900 },
+  cartMeta: { color: "#333", fontWeight: 800, fontSize: 13 },
 
+  qtyBox: { display: "flex", alignItems: "center", gap: 6 },
   qtyBtn: {
-    margin: "0 6px",
-    borderRadius: 8,
-    border: "1px solid #ccc",
-    padding: "2px 8px",
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    border: "1px solid rgba(0,0,0,0.12)",
+    background: "#fff",
+    fontSize: 18,
     cursor: "pointer",
+    boxShadow: "0 10px 20px rgba(0,0,0,0.10)",
+  },
+  qtyNum: { minWidth: 24, textAlign: "center", fontWeight: 900 },
+
+  cartSum: { width: 90, textAlign: "right", fontWeight: 900 },
+
+  removeBtn: {
+    border: "1px solid rgba(0,0,0,0.12)",
+    background: "#fff",
+    borderRadius: 12,
+    fontSize: 16,
+    cursor: "pointer",
+    padding: "6px 10px",
+    boxShadow: "0 10px 18px rgba(0,0,0,0.08)",
   },
 
-  totalBox: {
-    marginTop: 16,
+  totalBlock: {
+    marginTop: 10,
     paddingTop: 10,
-    borderTop: "1px solid #ddd",
+    borderTop: "1px solid rgba(0,0,0,0.08)",
+    display: "grid",
+    gap: 8,
   },
+
+  totalRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    fontSize: 15,
+  },
+  totalRowBig: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    fontSize: 17,
+    paddingTop: 6,
+    marginTop: 4,
+    borderTop: "1px dashed rgba(0,0,0,0.18)",
+  },
+
+  freeTag: {
+    marginLeft: 8,
+    padding: "3px 8px",
+    borderRadius: 999,
+    background: "rgba(47,188,47,0.14)",
+    color: "#1f7a1f",
+    fontWeight: 900,
+    fontSize: 12,
+  },
+  mutedTag: {
+    marginLeft: 8,
+    padding: "3px 8px",
+    borderRadius: 999,
+    background: "rgba(0,0,0,0.06)",
+    color: "#333",
+    fontWeight: 800,
+    fontSize: 12,
+  },
+
+  h2: { fontSize: 20, fontWeight: 900, marginBottom: 10 },
+
+  label: { display: "block", marginTop: 10, fontWeight: 900 },
+  input: {
+    width: "100%",
+    padding: "12px 12px",
+    borderRadius: 14,
+    border: "1px solid rgba(0,0,0,0.12)",
+    marginTop: 6,
+    fontSize: 14,
+    background: "#fff",
+    outline: "none",
+    boxShadow: "0 10px 18px rgba(0,0,0,0.06)",
+  },
+
+  primaryBtn: {
+    width: "100%",
+    marginTop: 12,
+    background: "linear-gradient(180deg, #2fbc2f 0%, #1f7a1f 100%)",
+    color: "#fff",
+    border: "1px solid rgba(255,255,255,0.25)",
+    borderRadius: 16,
+    padding: "13px 14px",
+    fontWeight: 900,
+    cursor: "pointer",
+    boxShadow: "0 14px 30px rgba(31,122,31,0.22)",
+  },
+  secondaryBtn: {
+    width: "100%",
+    marginTop: 10,
+    background: "#fff",
+    color: "#111",
+    border: "1px solid rgba(0,0,0,0.12)",
+    borderRadius: 16,
+    padding: "13px 14px",
+    fontWeight: 900,
+    cursor: "pointer",
+    boxShadow: "0 10px 22px rgba(0,0,0,0.08)",
+  },
+
+  note: { marginTop: 10, fontSize: 12, color: "#555" },
 };
