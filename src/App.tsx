@@ -136,12 +136,12 @@ function normalizeImagePath(img?: string): string | undefined {
   return "/" + s;
 }
 
-// fetch с таймаутом
+// fetch с таймаутом (Apps Script может “просыпаться” долго)
 async function fetchWithTimeout(
   input: RequestInfo,
   init: RequestInit & { timeoutMs?: number } = {}
 ) {
-  const { timeoutMs = 25000, ...rest } = init;
+  const { timeoutMs = 25000, ...rest } = init; // 25 секунд
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -206,7 +206,7 @@ export default function App() {
     if (p.length >= 6) saveLastPhone(p);
   }, [phone]);
 
-  // Загрузка ассортимента: кэш -> сеть
+  // Загрузка ассортимента: кэш → сеть
   useEffect(() => {
     let cancelled = false;
 
@@ -388,7 +388,6 @@ export default function App() {
       setAddress("");
       setComment("");
       setCustomerName("");
-      // телефон оставляем
       setTab("catalog");
     } catch (e: any) {
       setToast({
@@ -457,7 +456,7 @@ export default function App() {
             ...(toast.type === "info" ? styles.toastInfo : {}),
           }}
         >
-          <div style={{ fontWeight: 650 }}>{toast.text}</div>
+          <div style={{ fontWeight: 700 }}>{toast.text}</div>
           <button style={styles.toastClose} onClick={() => setToast(null)}>
             ×
           </button>
@@ -465,45 +464,42 @@ export default function App() {
       )}
 
       <div style={styles.container}>
-        {/* header */}
+        {/* ===== Header (НОВЫЙ, аккуратный) ===== */}
         <div style={styles.header}>
-          <div style={styles.title}>FarmShop</div>
+          <div style={styles.headerLeft}>
+            <div style={styles.title}>FarmShop</div>
 
-          {/* НОВАЯ ШАПКА: 1 большая слева + 2 маленьких справа */}
-          <div style={styles.tabsBar}>
             <button
               style={{
                 ...styles.bigTabBtn,
-                ...(tab === "catalog" ? styles.tabActiveBig : {}),
+                ...(tab === "catalog" ? styles.tabActive : {}),
               }}
               onClick={() => setTab("catalog")}
             >
               Товары
             </button>
+          </div>
 
-            <div style={styles.rightTabs}>
-              <button
-                style={{
-                  ...styles.smallTabBtn,
-                  ...(tab === "cart" || tab === "checkout"
-                    ? styles.tabActiveSmall
-                    : {}),
-                }}
-                onClick={() => setTab("cart")}
-              >
-                🛒 Корзина ({cartCount})
-              </button>
+          <div style={styles.headerRight}>
+            <button
+              style={{
+                ...styles.smallTabBtn,
+                ...(tab === "cart" || tab === "checkout" ? styles.tabActive : {}),
+              }}
+              onClick={() => setTab("cart")}
+            >
+              🛒 Корзина ({cartCount})
+            </button>
 
-              <button
-                style={{
-                  ...styles.smallTabBtn,
-                  ...(tab === "orders" ? styles.tabActiveSmall : {}),
-                }}
-                onClick={() => setTab("orders")}
-              >
-                📦 Заказы
-              </button>
-            </div>
+            <button
+              style={{
+                ...styles.smallTabBtn,
+                ...(tab === "orders" ? styles.tabActive : {}),
+              }}
+              onClick={() => setTab("orders")}
+            >
+              📦 Заказы
+            </button>
           </div>
         </div>
 
@@ -512,9 +508,7 @@ export default function App() {
           <div style={styles.infoMuted}>{loadingHint}</div>
         )}
         {error && (
-          <div style={{ ...styles.info, color: styles.colors.danger }}>
-            {error}
-          </div>
+          <div style={{ ...styles.info, color: styles.colors.danger }}>{error}</div>
         )}
 
         {!loading && !error && (
@@ -653,7 +647,7 @@ export default function App() {
                     <div style={styles.totalBlock}>
                       <div style={styles.totalRow}>
                         <div>Товары</div>
-                        <div style={{ fontWeight: 650 }}>{money(total)} ₽</div>
+                        <div style={{ fontWeight: 700 }}>{money(total)} ₽</div>
                       </div>
 
                       <div style={styles.totalRow}>
@@ -667,12 +661,14 @@ export default function App() {
                             </span>
                           )}
                         </div>
-                        <div style={{ fontWeight: 650 }}>{money(delivery)} ₽</div>
+                        <div style={{ fontWeight: 700 }}>
+                          {money(delivery)} ₽
+                        </div>
                       </div>
 
                       <div style={styles.totalRowBig}>
                         <div>Итого</div>
-                        <div style={{ fontWeight: 750 }}>
+                        <div style={{ fontWeight: 800 }}>
                           {money(grandTotal)} ₽
                         </div>
                       </div>
@@ -739,7 +735,7 @@ export default function App() {
                 <div style={styles.totalBlock}>
                   <div style={styles.totalRow}>
                     <div>Товары</div>
-                    <div style={{ fontWeight: 650 }}>{money(total)} ₽</div>
+                    <div style={{ fontWeight: 700 }}>{money(total)} ₽</div>
                   </div>
 
                   <div style={styles.totalRow}>
@@ -753,12 +749,14 @@ export default function App() {
                         </span>
                       )}
                     </div>
-                    <div style={{ fontWeight: 650 }}>{money(delivery)} ₽</div>
+                    <div style={{ fontWeight: 700 }}>
+                      {money(delivery)} ₽
+                    </div>
                   </div>
 
                   <div style={styles.totalRowBig}>
                     <div>Итого</div>
-                    <div style={{ fontWeight: 750 }}>
+                    <div style={{ fontWeight: 800 }}>
                       {money(grandTotal)} ₽
                     </div>
                   </div>
@@ -825,32 +823,22 @@ export default function App() {
                   {orders.map((o, idx) => (
                     <div key={idx} style={styles.orderCard}>
                       <div style={styles.orderTop}>
-                        <div style={styles.orderDate}>
-                          {formatDate(o.createdAt)}
-                        </div>
-                        <div style={styles.orderStatus}>
-                          {humanStatus(o.status)}
-                        </div>
+                        <div style={styles.orderDate}>{formatDate(o.createdAt)}</div>
+                        <div style={styles.orderStatus}>{humanStatus(o.status)}</div>
                       </div>
 
                       <div style={styles.orderTotals}>
                         <div style={styles.orderRow}>
                           <div>Товары</div>
-                          <div style={{ fontWeight: 650 }}>
-                            {money(o.total)} ₽
-                          </div>
+                          <div style={{ fontWeight: 700 }}>{money(o.total)} ₽</div>
                         </div>
                         <div style={styles.orderRow}>
                           <div>Доставка</div>
-                          <div style={{ fontWeight: 650 }}>
-                            {money(o.delivery)} ₽
-                          </div>
+                          <div style={{ fontWeight: 700 }}>{money(o.delivery)} ₽</div>
                         </div>
                         <div style={styles.orderRowBig}>
                           <div>Итого</div>
-                          <div style={{ fontWeight: 750 }}>
-                            {money(o.grandTotal)} ₽
-                          </div>
+                          <div style={{ fontWeight: 800 }}>{money(o.grandTotal)} ₽</div>
                         </div>
                       </div>
 
@@ -868,9 +856,7 @@ export default function App() {
                             </div>
                           ))}
                         {Array.isArray(o.items) && o.items.length > 20 ? (
-                          <div style={styles.infoMuted}>
-                            Показаны первые 20 позиций…
-                          </div>
+                          <div style={styles.infoMuted}>Показаны первые 20 позиций…</div>
                         ) : null}
                       </div>
                     </div>
@@ -882,7 +868,7 @@ export default function App() {
         )}
       </div>
 
-      {/* Плавающая корзина */}
+      {/* плавающая корзина */}
       {tab === "catalog" && cartCount > 0 && (
         <button style={styles.floatingCart} onClick={() => setTab("cart")}>
           🛒 {cartCount} • {money(grandTotal)} ₽
@@ -972,15 +958,26 @@ const styles: Record<string, React.CSSProperties> & {
     color: "#264653",
   },
 
+  /* ===== Header layout (НОВЫЕ стили) ===== */
   header: {
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr) auto",
+    gap: 10,
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  headerLeft: {
     display: "flex",
     alignItems: "center",
-    justifyContent: "space-between",
     gap: 10,
-    marginBottom: 12,
-    padding: "6px 0",
-    background: "transparent",
-    borderBottom: "none",
+    minWidth: 0,
+  },
+  headerRight: {
+    display: "grid",
+    gridAutoFlow: "row",
+    gap: 8,
+    alignItems: "stretch",
+    justifyItems: "end",
   },
 
   title: {
@@ -988,26 +985,17 @@ const styles: Record<string, React.CSSProperties> & {
     fontWeight: 650,
     letterSpacing: -0.2,
     color: "#264653",
-    flex: "0 0 auto",
-  },
-
-  // ВАЖНО: minWidth:0 чтобы не вылезало
-  tabsBar: {
-    display: "flex",
-    alignItems: "stretch",
-    justifyContent: "flex-end",
-    gap: 10,
-    flex: "1 1 auto",
-    minWidth: 0,
+    whiteSpace: "nowrap",
   },
 
   bigTabBtn: {
-    flex: "1 1 auto",
-    minWidth: 0,
-    border: "1px solid rgba(38,70,83,0.18)",
+    flex: 1,
+    minWidth: 120,
+    maxWidth: 220,
+    border: "1px solid rgba(42,157,143,0.30)",
     background: "rgba(255,255,255,0.78)",
-    padding: "12px 14px",
-    borderRadius: 16,
+    padding: "10px 14px",
+    borderRadius: 999,
     fontWeight: 650,
     cursor: "pointer",
     boxShadow: "0 6px 14px rgba(38,70,83,0.12)",
@@ -1016,23 +1004,16 @@ const styles: Record<string, React.CSSProperties> & {
     whiteSpace: "nowrap",
   },
 
-  rightTabs: {
-    flex: "0 0 auto",
-    display: "grid",
-    gap: 8,
-    minWidth: 156,
-    maxWidth: 190,
-  },
-
   smallTabBtn: {
-    width: "100%",
+    width: 150,
+    maxWidth: "100%",
     border: "1px solid rgba(38,70,83,0.18)",
     background: "rgba(255,255,255,0.78)",
-    padding: "10px 12px",
-    borderRadius: 14,
+    padding: "9px 12px",
+    borderRadius: 999,
     fontWeight: 600,
     cursor: "pointer",
-    boxShadow: "0 6px 14px rgba(38,70,83,0.10)",
+    boxShadow: "0 6px 14px rgba(38,70,83,0.12)",
     color: "#264653",
     boxSizing: "border-box",
     whiteSpace: "nowrap",
@@ -1040,20 +1021,12 @@ const styles: Record<string, React.CSSProperties> & {
     textOverflow: "ellipsis",
   },
 
-  tabActiveBig: {
+  tabActive: {
     borderColor: "rgba(42,157,143,0.35)",
     background:
       "linear-gradient(180deg, rgba(42,157,143,0.98) 0%, rgba(38,70,83,0.98) 140%)",
     color: "#ffffff",
     boxShadow: "0 10px 22px rgba(42,157,143,0.20)",
-  },
-
-  tabActiveSmall: {
-    borderColor: "rgba(42,157,143,0.35)",
-    background:
-      "linear-gradient(180deg, rgba(42,157,143,0.98) 0%, rgba(38,70,83,0.98) 140%)",
-    color: "#ffffff",
-    boxShadow: "0 10px 22px rgba(42,157,143,0.18)",
   },
 
   chipsRow: {
@@ -1374,7 +1347,7 @@ const styles: Record<string, React.CSSProperties> & {
     borderRadius: 12,
     padding: "8px 10px",
     cursor: "pointer",
-    fontWeight: 650,
+    fontWeight: 700,
     boxShadow: "0 8px 14px rgba(38,70,83,0.08)",
   },
 
