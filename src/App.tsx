@@ -1001,7 +1001,7 @@ const styles: Record<string, React.CSSProperties> & {
     whiteSpace: "nowrap",
     overflow: "hidden",
     textOverflow: "ellipsis",
-    height: 44,
+    height: 42,
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
@@ -1432,4 +1432,5 @@ const styles: Record<string, React.CSSProperties> & {
     fontWeight: 650,
   },
 };
+
 
