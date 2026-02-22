@@ -714,13 +714,11 @@ const styles: Record<string, React.CSSProperties> & {
 
   backgroundImage:
   "linear-gradient(rgba(255,255,255,0.30), rgba(255,255,255,0.50)), url('/images/bg-farm.png')",
-
 backgroundRepeat: "no-repeat",
 backgroundPosition: "center top",
-
-// ВАЖНО: закрываем весь экран всегда
-backgroundSize: "100% 100%",
-backgroundAttachment: "fixed", // ← самое главное
+backgroundSize: "cover",
+backgroundAttachment: "fixed",// ← самое главное
+    minHeight: "100vh",
 },
 
   container: {
@@ -1113,5 +1111,6 @@ backgroundAttachment: "fixed", // ← самое главное
     boxShadow: "0 16px 32px rgba(38,70,83,0.18)",
   },
 };
+
 
 
