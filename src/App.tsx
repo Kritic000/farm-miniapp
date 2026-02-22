@@ -480,7 +480,7 @@ export default function App() {
         {/* ===== HEADER (вариант 2: слева бренд+товары, справа корзина+заказы) ===== */}
         <div style={styles.headerGrid}>
           <div style={styles.headerLeft}>
-            <div style={styles.title}>FarmShop</div>
+            <div style={styles.title}>Нашенское</div>
 
             <button
               style={{
@@ -1436,6 +1436,7 @@ const styles: Record<string, React.CSSProperties> & {
     fontWeight: 650,
   },
 };
+
 
 
 
