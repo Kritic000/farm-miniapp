@@ -27,8 +27,7 @@ type TgUser = {
 function getTgUser(): TgUser | null {
   const w = window as any;
   const tg = w?.Telegram?.WebApp;
-  const u = tg?.initDataUnsafe?.user;
-  return u || null;
+  return tg?.initDataUnsafe?.user || null;
 }
 
 function money(n: number) {
@@ -38,11 +37,12 @@ function money(n: number) {
 type Toast = { type: "error" | "success" | "info"; text: string } | null;
 
 const PRODUCTS_CACHE_KEY = "farm_products_cache_v1";
-const PRODUCTS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 минут
+const PRODUCTS_CACHE_TTL_MS = 10 * 60 * 1000;
 
 const DELIVERY_FEE = 200;
 const FREE_DELIVERY_FROM = 2000;
 
+// ---------- cache ----------
 function loadProductsCache(): { ts: number; products: Product[] } | null {
   try {
     const raw = localStorage.getItem(PRODUCTS_CACHE_KEY);
@@ -70,14 +70,16 @@ function normalizeImagePath(img?: string): string | undefined {
   return "/" + s;
 }
 
-// fetch с таймаутом (чтобы не висло, если Apps Script долго отвечает)
-async function fetchWithTimeout(input: RequestInfo, init: RequestInit & { timeoutMs?: number } = {}) {
-  const { timeoutMs = 8000, ...rest } = init;
+// ---------- fetch with timeout (Apps Script may be slow on cold start) ----------
+async function fetchWithTimeout(
+  input: RequestInfo,
+  init: RequestInit & { timeoutMs?: number } = {}
+) {
+  const { timeoutMs = 25000, ...rest } = init; // 25 sec
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(input, { ...rest, signal: controller.signal });
-    return res;
+    return await fetch(input, { ...rest, signal: controller.signal });
   } finally {
     clearTimeout(t);
   }
@@ -93,8 +95,8 @@ export default function App() {
 
   const [products, setProducts] = useState<Product[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>("Все");
-  const [tab, setTab] = useState<"catalog" | "cart" | "checkout">("catalog");
 
+  const [tab, setTab] = useState<"catalog" | "cart" | "checkout">("catalog");
   const [cart, setCart] = useState<Record<string, CartItem>>({});
 
   const [address, setAddress] = useState("");
@@ -105,17 +107,15 @@ export default function App() {
 
   const [sending, setSending] = useState(false);
 
-  // --- адаптация под Desktop vs Mobile ---
-  const [isDesktop, setIsDesktop] = useState<boolean>(() => {
-    // Telegram Desktop обычно шире + hover устройство
-    return window.innerWidth >= 520;
-  });
-
+  // Detect desktop: wider layout -> apply different styles
+  const [isDesktop, setIsDesktop] = useState(() => window.innerWidth >= 520);
   useEffect(() => {
     const onResize = () => setIsDesktop(window.innerWidth >= 520);
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
+
+  const styles = useMemo(() => createStyles(isDesktop), [isDesktop]);
 
   // Telegram init
   useEffect(() => {
@@ -129,34 +129,35 @@ export default function App() {
     }
   }, []);
 
-  // Автозакрытие toast
+  // toast autoclose
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 2500);
     return () => clearTimeout(t);
   }, [toast]);
 
-  // Быстрая загрузка: кэш + сеть
+  // Load products: show cache fast, then refresh
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
+      // show cache immediately if fresh
+      const cached = loadProductsCache();
+      const hasFreshCache = !!(cached && Date.now() - cached.ts < PRODUCTS_CACHE_TTL_MS);
+
       try {
         setLoading(true);
         setError("");
         setLoadingHint("");
 
-        // 1) кэш
-        const cached = loadProductsCache();
-        if (cached && Date.now() - cached.ts < PRODUCTS_CACHE_TTL_MS) {
+        if (hasFreshCache && cached) {
           setProducts(cached.products);
           setLoading(false);
           setLoadingHint("Обновляем ассортимент…");
         }
 
-        // 2) сеть (с таймаутом)
         const url = `${API_URL}?action=products&ts=${Date.now()}`;
-        const res = await fetchWithTimeout(url, { method: "GET", timeoutMs: 8000 });
+        const res = await fetchWithTimeout(url, { method: "GET", timeoutMs: 25000 });
         const data = await res.json();
 
         if (data?.error) throw new Error(data.error);
@@ -175,8 +176,22 @@ export default function App() {
         setLoadingHint("");
       } catch (e: any) {
         if (cancelled) return;
-        const msg = e?.name === "AbortError" ? "Сервер долго отвечает. Попробуйте ещё раз." : (e?.message || "Ошибка загрузки товаров");
-        setError(msg);
+
+        // If server timed out but we already have cache shown -> don't show scary error
+        if (e?.name === "AbortError" && hasFreshCache) {
+          setLoading(false);
+          setError("");
+          setLoadingHint("Сервер отвечает медленно. Показан сохранённый ассортимент.");
+          return;
+        }
+
+        // If no cache and timeout -> show friendly error
+        if (e?.name === "AbortError") {
+          setError("Сервер долго отвечает. Попробуйте ещё раз.");
+        } else {
+          setError(e?.message || "Ошибка загрузки товаров");
+        }
+
         setLoading(false);
         setLoadingHint("");
       }
@@ -199,12 +214,9 @@ export default function App() {
   }, [products, activeCategory]);
 
   const cartItems = useMemo(() => Object.values(cart), [cart]);
-
   const cartCount = useMemo(() => cartItems.reduce((s, it) => s + it.qty, 0), [cartItems]);
-
   const total = useMemo(() => cartItems.reduce((s, it) => s + it.qty * it.product.price, 0), [cartItems]);
 
-  // доставка: 200 ₽ если сумма товаров > 0 и < 2000
   const delivery = useMemo(() => {
     if (total <= 0) return 0;
     return total < FREE_DELIVERY_FROM ? DELIVERY_FEE : 0;
@@ -267,9 +279,9 @@ export default function App() {
         qty: it.qty,
         sum: it.qty * it.product.price,
       })),
-      total,       // сумма товаров
+      total,       // товары
       delivery,    // доставка
-      grandTotal,  // итого с доставкой
+      grandTotal,  // итого
     };
 
     try {
@@ -301,41 +313,39 @@ export default function App() {
     }
   }
 
-  // ---- стили: на Desktop отключаем blur/стекло, чтобы не было “странно” ----
-  const S = useMemo(() => createStyles(isDesktop), [isDesktop]);
-
   return (
-    <div style={S.page}>
+    <div style={styles.page}>
+      {/* Toast */}
       {toast && (
         <div
           style={{
-            ...S.toast,
-            ...(toast.type === "error" ? S.toastError : {}),
-            ...(toast.type === "success" ? S.toastSuccess : {}),
-            ...(toast.type === "info" ? S.toastInfo : {}),
+            ...styles.toast,
+            ...(toast.type === "error" ? styles.toastError : {}),
+            ...(toast.type === "success" ? styles.toastSuccess : {}),
+            ...(toast.type === "info" ? styles.toastInfo : {}),
           }}
         >
           <div style={{ fontWeight: 900 }}>{toast.text}</div>
-          <button style={S.toastClose} onClick={() => setToast(null)}>
+          <button style={styles.toastClose} onClick={() => setToast(null)}>
             ×
           </button>
         </div>
       )}
 
-      <div style={S.container}>
-        <div style={S.header}>
-          <div style={S.title}>Каталог</div>
+      <div style={styles.container}>
+        <div style={styles.header}>
+          <div style={styles.title}>Каталог</div>
 
-          <div style={S.tabs}>
+          <div style={styles.tabs}>
             <button
-              style={{ ...S.tabBtn, ...(tab === "catalog" ? S.tabActive : {}) }}
+              style={{ ...styles.tabBtn, ...(tab === "catalog" ? styles.tabActive : {}) }}
               onClick={() => setTab("catalog")}
             >
               Товары
             </button>
 
             <button
-              style={{ ...S.tabBtn, ...(tab === "cart" || tab === "checkout" ? S.tabActive : {}) }}
+              style={{ ...styles.tabBtn, ...(tab === "cart" || tab === "checkout" ? styles.tabActive : {}) }}
               onClick={() => setTab("cart")}
             >
               🛒 Корзина ({cartCount})
@@ -343,19 +353,19 @@ export default function App() {
           </div>
         </div>
 
-        {loading && <div style={S.info}>Загрузка ассортимента…</div>}
-        {!loading && loadingHint && <div style={S.infoMuted}>{loadingHint}</div>}
-        {error && <div style={{ ...S.info, color: "#b00020" }}>{error}</div>}
+        {loading && <div style={styles.info}>Загрузка ассортимента…</div>}
+        {!loading && loadingHint && <div style={styles.infoMuted}>{loadingHint}</div>}
+        {error && <div style={{ ...styles.info, color: "#b00020" }}>{error}</div>}
 
         {!loading && !error && (
           <>
             {tab === "catalog" && (
               <>
-                <div style={S.chipsRow}>
+                <div style={styles.chipsRow}>
                   {categories.map((c) => (
                     <button
                       key={c}
-                      style={{ ...S.chip, ...(activeCategory === c ? S.chipActive : {}) }}
+                      style={{ ...styles.chip, ...(activeCategory === c ? styles.chipActive : {}) }}
                       onClick={() => setActiveCategory(c)}
                     >
                       {c}
@@ -363,17 +373,17 @@ export default function App() {
                   ))}
                 </div>
 
-                <div style={S.list}>
+                <div style={styles.list}>
                   {filteredProducts.map((p) => {
                     const q = qtyOf(p.id);
 
                     return (
-                      <div key={p.id} style={S.card}>
+                      <div key={p.id} style={styles.card}>
                         {p.image ? (
                           <img
                             src={p.image}
                             alt={p.name}
-                            style={S.cardImg}
+                            style={styles.cardImg}
                             loading="lazy"
                             decoding="async"
                             onError={(e) => {
@@ -381,28 +391,28 @@ export default function App() {
                             }}
                           />
                         ) : (
-                          <div style={S.cardImgPlaceholder}>Нет фото</div>
+                          <div style={styles.cardImgPlaceholder}>Нет фото</div>
                         )}
 
-                        <div style={S.cardBody}>
-                          <div style={S.cardName}>{p.name}</div>
-                          {p.description ? <div style={S.cardDesc}>{p.description}</div> : null}
+                        <div style={styles.cardBody}>
+                          <div style={styles.cardName}>{p.name}</div>
+                          {p.description ? <div style={styles.cardDesc}>{p.description}</div> : null}
 
-                          <div style={S.cardMeta}>
+                          <div style={styles.cardMeta}>
                             {money(p.price)} ₽ / {p.unit}
                           </div>
 
                           {q === 0 ? (
-                            <button style={S.buyBtn} onClick={() => addToCart(p)}>
+                            <button style={styles.buyBtn} onClick={() => addToCart(p)}>
                               В корзину
                             </button>
                           ) : (
-                            <div style={S.qtyInline}>
-                              <button style={S.qtyBtn} onClick={() => setQty(p.id, q - 1)}>
+                            <div style={styles.qtyInline}>
+                              <button style={styles.qtyBtn} onClick={() => setQty(p.id, q - 1)}>
                                 −
                               </button>
-                              <div style={S.qtyNum}>{q}</div>
-                              <button style={S.qtyBtn} onClick={() => setQty(p.id, q + 1)}>
+                              <div style={styles.qtyNum}>{q}</div>
+                              <button style={styles.qtyBtn} onClick={() => setQty(p.id, q + 1)}>
                                 +
                               </button>
                             </div>
@@ -416,63 +426,63 @@ export default function App() {
             )}
 
             {tab === "cart" && (
-              <div style={S.panel}>
+              <div style={styles.panel}>
                 {cartItems.length === 0 ? (
-                  <div style={S.info}>Корзина пустая</div>
+                  <div style={styles.info}>Корзина пустая</div>
                 ) : (
                   <>
                     {cartItems.map((it) => (
-                      <div key={it.product.id} style={S.cartRow}>
+                      <div key={it.product.id} style={styles.cartRow}>
                         <div style={{ flex: 1 }}>
-                          <div style={S.cartName}>{it.product.name}</div>
-                          <div style={S.cartMeta}>
+                          <div style={styles.cartName}>{it.product.name}</div>
+                          <div style={styles.cartMeta}>
                             {money(it.product.price)} ₽ / {it.product.unit}
                           </div>
                         </div>
 
-                        <div style={S.qtyBox}>
-                          <button style={S.qtyBtn} onClick={() => setQty(it.product.id, it.qty - 1)}>
+                        <div style={styles.qtyBox}>
+                          <button style={styles.qtyBtn} onClick={() => setQty(it.product.id, it.qty - 1)}>
                             −
                           </button>
-                          <div style={S.qtyNum}>{it.qty}</div>
-                          <button style={S.qtyBtn} onClick={() => setQty(it.product.id, it.qty + 1)}>
+                          <div style={styles.qtyNum}>{it.qty}</div>
+                          <button style={styles.qtyBtn} onClick={() => setQty(it.product.id, it.qty + 1)}>
                             +
                           </button>
                         </div>
 
-                        <div style={S.cartSum}>{money(it.qty * it.product.price)} ₽</div>
+                        <div style={styles.cartSum}>{money(it.qty * it.product.price)} ₽</div>
 
-                        <button style={S.removeBtn} onClick={() => setQty(it.product.id, 0)}>
+                        <button style={styles.removeBtn} onClick={() => setQty(it.product.id, 0)}>
                           ✕
                         </button>
                       </div>
                     ))}
 
-                    <div style={S.totalBlock}>
-                      <div style={S.totalRow}>
+                    <div style={styles.totalBlock}>
+                      <div style={styles.totalRow}>
                         <div>Товары</div>
                         <div style={{ fontWeight: 900 }}>{money(total)} ₽</div>
                       </div>
 
-                      <div style={S.totalRow}>
+                      <div style={styles.totalRow}>
                         <div>
                           Доставка{" "}
                           {delivery === 0 ? (
-                            <span style={S.freeTag}>бесплатно</span>
+                            <span style={styles.freeTag}>бесплатно</span>
                           ) : (
-                            <span style={S.mutedTag}>до {money(FREE_DELIVERY_FROM)} ₽</span>
+                            <span style={styles.mutedTag}>до {money(FREE_DELIVERY_FROM)} ₽</span>
                           )}
                         </div>
                         <div style={{ fontWeight: 900 }}>{money(delivery)} ₽</div>
                       </div>
 
-                      <div style={S.totalRowBig}>
+                      <div style={styles.totalRowBig}>
                         <div>Итого</div>
                         <div style={{ fontWeight: 950 }}>{money(grandTotal)} ₽</div>
                       </div>
                     </div>
 
-                    <button style={S.primaryBtn} onClick={() => setTab("checkout")}>
+                    <button style={styles.primaryBtn} onClick={() => setTab("checkout")}>
                       Оформить
                     </button>
                   </>
@@ -481,25 +491,25 @@ export default function App() {
             )}
 
             {tab === "checkout" && (
-              <div style={S.panel}>
-                <div style={S.h2}>Оформление</div>
+              <div style={styles.panel}>
+                <div style={styles.h2}>Оформление</div>
 
-                <label style={S.label}>
+                <label style={styles.label}>
                   Имя <span style={{ color: "#b00020" }}>*</span>
                 </label>
                 <input
-                  style={S.input}
+                  style={styles.input}
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
                   placeholder="Как к вам обращаться?"
                   autoComplete="name"
                 />
 
-                <label style={S.label}>
+                <label style={styles.label}>
                   Телефон <span style={{ color: "#b00020" }}>*</span>
                 </label>
                 <input
-                  style={S.input}
+                  style={styles.input}
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="+7..."
@@ -507,44 +517,44 @@ export default function App() {
                   inputMode="tel"
                 />
 
-                <label style={S.label}>
+                <label style={styles.label}>
                   Адрес доставки <span style={{ color: "#b00020" }}>*</span>
                 </label>
                 <input
-                  style={S.input}
+                  style={styles.input}
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
                   placeholder="улица, дом, подъезд, этаж, кв."
                   autoComplete="street-address"
                 />
 
-                <label style={S.label}>Комментарий (необязательно)</label>
+                <label style={styles.label}>Комментарий (необязательно)</label>
                 <input
-                  style={S.input}
+                  style={styles.input}
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
                   placeholder="код домофона, удобное время"
                 />
 
-                <div style={S.totalBlock}>
-                  <div style={S.totalRow}>
+                <div style={styles.totalBlock}>
+                  <div style={styles.totalRow}>
                     <div>Товары</div>
                     <div style={{ fontWeight: 900 }}>{money(total)} ₽</div>
                   </div>
 
-                  <div style={S.totalRow}>
+                  <div style={styles.totalRow}>
                     <div>
                       Доставка{" "}
                       {delivery === 0 ? (
-                        <span style={S.freeTag}>бесплатно</span>
+                        <span style={styles.freeTag}>бесплатно</span>
                       ) : (
-                        <span style={S.mutedTag}>до {money(FREE_DELIVERY_FROM)} ₽</span>
+                        <span style={styles.mutedTag}>до {money(FREE_DELIVERY_FROM)} ₽</span>
                       )}
                     </div>
                     <div style={{ fontWeight: 900 }}>{money(delivery)} ₽</div>
                   </div>
 
-                  <div style={S.totalRowBig}>
+                  <div style={styles.totalRowBig}>
                     <div>Итого</div>
                     <div style={{ fontWeight: 950 }}>{money(grandTotal)} ₽</div>
                   </div>
@@ -552,7 +562,7 @@ export default function App() {
 
                 <button
                   style={{
-                    ...S.primaryBtn,
+                    ...styles.primaryBtn,
                     opacity: sending ? 0.7 : 1,
                     cursor: sending ? "not-allowed" : "pointer",
                   }}
@@ -562,11 +572,11 @@ export default function App() {
                   {sending ? "Отправляем..." : "Подтвердить заказ"}
                 </button>
 
-                <button style={S.secondaryBtn} onClick={() => setTab("cart")} disabled={sending}>
+                <button style={styles.secondaryBtn} onClick={() => setTab("cart")} disabled={sending}>
                   Назад в корзину
                 </button>
 
-                <div style={S.note}>Оплата пока не принимается в приложении — мы свяжемся после оформления.</div>
+                <div style={styles.note}>Оплата пока не принимается в приложении — мы свяжемся после оформления.</div>
               </div>
             )}
           </>
@@ -577,55 +587,22 @@ export default function App() {
 }
 
 function createStyles(isDesktop: boolean): Record<string, React.CSSProperties> {
-  // На Desktop выключаем blur/backdropFilter (там часто “ломает” вид)
-  const glassBg = isDesktop ? "#ffffff" : "rgba(255,255,255,0.78)";
-  const glassBgStrong = isDesktop ? "#ffffff" : "rgba(255,255,255,0.92)";
-  const glassBorder = isDesktop ? "rgba(0,0,0,0.10)" : "rgba(0,0,0,0.08)";
-  const blur: React.CSSProperties = isDesktop
-    ? {}
-    : { backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)" };
+  // Сделаем Desktop ВИЗУАЛЬНО отличающимся: центрирование + более “плоское” и аккуратное
+  const maxW = isDesktop ? 520 : 9999;
 
   return {
     page: {
       fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
-      padding: 14,
-      background:
-        "radial-gradient(1200px 600px at 20% 0%, rgba(47,188,47,0.12) 0%, rgba(242,243,245,1) 45%)",
+      padding: isDesktop ? 18 : 14,
+      background: isDesktop
+        ? "linear-gradient(180deg, #eef2f0 0%, #f6f7f8 40%, #f2f3f5 100%)"
+        : "radial-gradient(1200px 600px at 20% 0%, rgba(47,188,47,0.12) 0%, rgba(242,243,245,1) 45%)",
       minHeight: "100vh",
     },
 
-    // контейнер чтобы на Desktop не было “огромных” блоков
     container: {
-      maxWidth: 520,
+      maxWidth: maxW,
       margin: "0 auto",
-    },
-
-    toast: {
-      position: "sticky",
-      top: 8,
-      zIndex: 9999,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: 10,
-      padding: "12px 12px",
-      borderRadius: 14,
-      boxShadow: "0 10px 24px rgba(0,0,0,0.18)",
-      marginBottom: 10,
-      border: `1px solid ${glassBorder}`,
-      background: glassBgStrong,
-      ...blur,
-    },
-    toastError: { background: "rgba(255,232,234,0.92)", color: "#7a0010" },
-    toastSuccess: { background: "rgba(231,246,234,0.92)", color: "#0e4b1b" },
-    toastInfo: { background: "rgba(238,242,255,0.92)", color: "#1c2b6b" },
-    toastClose: {
-      border: 0,
-      background: "transparent",
-      fontSize: 22,
-      lineHeight: 1,
-      cursor: "pointer",
-      padding: 4,
     },
 
     header: {
@@ -638,57 +615,52 @@ function createStyles(isDesktop: boolean): Record<string, React.CSSProperties> {
       gap: 10,
       marginBottom: 12,
       padding: "10px 0",
-      background: isDesktop
-        ? "linear-gradient(180deg, rgba(242,243,245,0.98) 0%, rgba(242,243,245,0.92) 100%)"
-        : "linear-gradient(180deg, rgba(242,243,245,0.92) 0%, rgba(242,243,245,0.55) 100%)",
-      ...(!isDesktop ? { backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" } : {}),
+      background: "transparent",
     },
 
-    title: { fontSize: 32, fontWeight: 900, letterSpacing: -0.6 },
+    title: { fontSize: 34, fontWeight: 900, letterSpacing: -0.6 },
 
-    tabs: { display: "flex", gap: 8 },
+    tabs: { display: "flex", gap: 10 },
 
     tabBtn: {
-      border: `1px solid ${glassBorder}`,
-      background: glassBg,
-      padding: "10px 14px",
+      border: "1px solid rgba(0,0,0,0.10)",
+      background: "#ffffff",
+      padding: isDesktop ? "10px 16px" : "10px 14px",
       borderRadius: 999,
       fontWeight: 900,
       cursor: "pointer",
-      boxShadow: "0 6px 16px rgba(0,0,0,0.08)",
-      ...blur,
+      boxShadow: isDesktop ? "0 8px 18px rgba(0,0,0,0.10)" : "0 6px 16px rgba(0,0,0,0.08)",
     },
     tabActive: {
-      borderColor: "rgba(31,122,31,0.25)",
+      borderColor: "rgba(31,122,31,0.22)",
       background: "linear-gradient(180deg, rgba(47,188,47,0.95) 0%, rgba(31,122,31,0.98) 100%)",
       color: "#fff",
-      boxShadow: "0 10px 22px rgba(31,122,31,0.25)",
+      boxShadow: "0 12px 26px rgba(31,122,31,0.22)",
     },
 
     chipsRow: {
       display: "flex",
-      gap: 8,
+      gap: 10,
       overflowX: "auto",
       paddingBottom: 10,
       marginBottom: 10,
     },
 
     chip: {
-      border: `1px solid ${glassBorder}`,
-      background: glassBg,
+      border: "1px solid rgba(0,0,0,0.10)",
+      background: "#fff",
       padding: "9px 12px",
       borderRadius: 999,
       fontWeight: 900,
       cursor: "pointer",
       whiteSpace: "nowrap",
-      boxShadow: "0 6px 14px rgba(0,0,0,0.06)",
-      ...blur,
+      boxShadow: "0 8px 18px rgba(0,0,0,0.08)",
     },
     chipActive: {
       background: "linear-gradient(180deg, rgba(47,188,47,0.95) 0%, rgba(31,122,31,0.98) 100%)",
       color: "#fff",
-      borderColor: "rgba(31,122,31,0.25)",
-      boxShadow: "0 10px 22px rgba(31,122,31,0.22)",
+      borderColor: "rgba(31,122,31,0.22)",
+      boxShadow: "0 12px 26px rgba(31,122,31,0.20)",
     },
 
     info: { padding: 12, fontWeight: 800 },
@@ -697,11 +669,11 @@ function createStyles(isDesktop: boolean): Record<string, React.CSSProperties> {
     list: { display: "grid", gap: 12 },
 
     card: {
-      background: glassBgStrong,
+      background: "#fff",
       borderRadius: 18,
       overflow: "hidden",
-      boxShadow: "0 12px 26px rgba(0,0,0,0.08)",
-      border: `1px solid ${glassBorder}`,
+      boxShadow: "0 12px 26px rgba(0,0,0,0.10)",
+      border: "1px solid rgba(0,0,0,0.08)",
       display: "grid",
       gridTemplateColumns: "120px 1fr",
     },
@@ -732,17 +704,17 @@ function createStyles(isDesktop: boolean): Record<string, React.CSSProperties> {
       fontWeight: 900,
       cursor: "pointer",
       width: "fit-content",
-      boxShadow: "0 10px 22px rgba(31,122,31,0.22)",
+      boxShadow: "0 12px 26px rgba(31,122,31,0.22)",
     },
 
     qtyInline: { display: "flex", alignItems: "center", gap: 8, marginTop: 6 },
 
     panel: {
-      background: glassBgStrong,
+      background: "#fff",
       borderRadius: 18,
       padding: 14,
-      boxShadow: "0 12px 26px rgba(0,0,0,0.08)",
-      border: `1px solid ${glassBorder}`,
+      boxShadow: "0 12px 26px rgba(0,0,0,0.10)",
+      border: "1px solid rgba(0,0,0,0.08)",
     },
 
     cartRow: {
@@ -750,7 +722,7 @@ function createStyles(isDesktop: boolean): Record<string, React.CSSProperties> {
       alignItems: "center",
       gap: 10,
       padding: "10px 0",
-      borderBottom: "1px solid rgba(0,0,0,0.06)",
+      borderBottom: "1px solid rgba(0,0,0,0.08)",
     },
     cartName: { fontWeight: 900 },
     cartMeta: { color: "#333", fontWeight: 800, fontSize: 13 },
@@ -760,32 +732,30 @@ function createStyles(isDesktop: boolean): Record<string, React.CSSProperties> {
       width: 36,
       height: 36,
       borderRadius: 12,
-      border: `1px solid ${glassBorder}`,
-      background: glassBg,
+      border: "1px solid rgba(0,0,0,0.12)",
+      background: "#fff",
       fontSize: 18,
       cursor: "pointer",
-      boxShadow: "0 8px 18px rgba(0,0,0,0.07)",
-      ...blur,
+      boxShadow: "0 10px 20px rgba(0,0,0,0.10)",
     },
     qtyNum: { minWidth: 24, textAlign: "center", fontWeight: 900 },
 
     cartSum: { width: 90, textAlign: "right", fontWeight: 900 },
 
     removeBtn: {
-      border: `1px solid ${glassBorder}`,
-      background: glassBg,
+      border: "1px solid rgba(0,0,0,0.12)",
+      background: "#fff",
       borderRadius: 12,
       fontSize: 16,
       cursor: "pointer",
       padding: "6px 10px",
-      boxShadow: "0 8px 18px rgba(0,0,0,0.06)",
-      ...blur,
+      boxShadow: "0 10px 18px rgba(0,0,0,0.08)",
     },
 
     totalBlock: {
       marginTop: 10,
       paddingTop: 10,
-      borderTop: "1px solid rgba(0,0,0,0.06)",
+      borderTop: "1px solid rgba(0,0,0,0.08)",
       display: "grid",
       gap: 8,
     },
@@ -803,7 +773,7 @@ function createStyles(isDesktop: boolean): Record<string, React.CSSProperties> {
       fontSize: 17,
       paddingTop: 6,
       marginTop: 4,
-      borderTop: "1px dashed rgba(0,0,0,0.12)",
+      borderTop: "1px dashed rgba(0,0,0,0.18)",
     },
 
     freeTag: {
@@ -832,12 +802,12 @@ function createStyles(isDesktop: boolean): Record<string, React.CSSProperties> {
       width: "100%",
       padding: "12px 12px",
       borderRadius: 14,
-      border: `1px solid ${glassBorder}`,
+      border: "1px solid rgba(0,0,0,0.12)",
       marginTop: 6,
       fontSize: 14,
       background: "#fff",
       outline: "none",
-      boxShadow: "0 8px 18px rgba(0,0,0,0.05)",
+      boxShadow: "0 10px 18px rgba(0,0,0,0.06)",
     },
 
     primaryBtn: {
@@ -850,14 +820,14 @@ function createStyles(isDesktop: boolean): Record<string, React.CSSProperties> {
       padding: "13px 14px",
       fontWeight: 900,
       cursor: "pointer",
-      boxShadow: "0 12px 26px rgba(31,122,31,0.22)",
+      boxShadow: "0 14px 30px rgba(31,122,31,0.22)",
     },
     secondaryBtn: {
       width: "100%",
       marginTop: 10,
       background: "#fff",
       color: "#111",
-      border: `1px solid ${glassBorder}`,
+      border: "1px solid rgba(0,0,0,0.12)",
       borderRadius: 16,
       padding: "13px 14px",
       fontWeight: 900,
@@ -866,5 +836,32 @@ function createStyles(isDesktop: boolean): Record<string, React.CSSProperties> {
     },
 
     note: { marginTop: 10, fontSize: 12, color: "#555" },
+
+    toast: {
+      position: "sticky",
+      top: 8,
+      zIndex: 9999,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 10,
+      padding: "12px 12px",
+      borderRadius: 14,
+      boxShadow: "0 12px 26px rgba(0,0,0,0.18)",
+      marginBottom: 10,
+      border: "1px solid rgba(0,0,0,0.10)",
+      background: "#fff",
+    },
+    toastError: { background: "rgba(255,232,234,0.95)", color: "#7a0010" },
+    toastSuccess: { background: "rgba(231,246,234,0.95)", color: "#0e4b1b" },
+    toastInfo: { background: "rgba(238,242,255,0.95)", color: "#1c2b6b" },
+    toastClose: {
+      border: 0,
+      background: "transparent",
+      fontSize: 22,
+      lineHeight: 1,
+      cursor: "pointer",
+      padding: 4,
+    },
   };
 }
