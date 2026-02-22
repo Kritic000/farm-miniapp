@@ -38,7 +38,7 @@ function money(n: number) {
 type Toast = { type: "error" | "success" | "info"; text: string } | null;
 
 const PRODUCTS_CACHE_KEY = "farm_products_cache_v1";
-const PRODUCTS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 минут
+const PRODUCTS_CACHE_TTL_MS = 10 * 60 * 1000;
 
 const DELIVERY_FEE = 200;
 const FREE_DELIVERY_FROM = 2000;
@@ -61,10 +61,6 @@ function saveProductsCache(products: Product[]) {
   } catch {}
 }
 
-// нормализуем путь картинки из таблицы:
-// - "public/images/xxx.jpg" -> "/images/xxx.jpg"
-// - "/images/xxx.jpg" -> "/images/xxx.jpg"
-// - "images/xxx.jpg" -> "/images/xxx.jpg"
 function normalizeImagePath(img?: string): string | undefined {
   const s = String(img || "").trim();
   if (!s) return undefined;
@@ -74,12 +70,11 @@ function normalizeImagePath(img?: string): string | undefined {
   return "/" + s;
 }
 
-// fetch с таймаутом (Apps Script может “просыпаться” долго)
 async function fetchWithTimeout(
   input: RequestInfo,
   init: RequestInit & { timeoutMs?: number } = {}
 ) {
-  const { timeoutMs = 25000, ...rest } = init; // 25 секунд
+  const { timeoutMs = 25000, ...rest } = init;
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -112,7 +107,6 @@ export default function App() {
 
   const [sending, setSending] = useState(false);
 
-  // Telegram init
   useEffect(() => {
     const w = window as any;
     const tg = w?.Telegram?.WebApp;
@@ -124,14 +118,12 @@ export default function App() {
     }
   }, []);
 
-  // Автозакрытие toast
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 2500);
     return () => clearTimeout(t);
   }, [toast]);
 
-  // Быстрая загрузка ассортимента: сначала кэш, потом сеть
   useEffect(() => {
     let cancelled = false;
 
@@ -144,14 +136,12 @@ export default function App() {
         setError("");
         setLoadingHint("");
 
-        // 1) показать кэш мгновенно
         if (hasFreshCache && cached) {
           setProducts(cached.products);
           setLoading(false);
           setLoadingHint("Обновляем ассортимент…");
         }
 
-        // 2) подтянуть с сервера
         const url = `${API_URL}?action=products&ts=${Date.now()}`;
         const res = await fetchWithTimeout(url, { method: "GET", timeoutMs: 25000 });
         const data = await res.json();
@@ -323,6 +313,7 @@ export default function App() {
       )}
 
       <div style={styles.container}>
+        {/* ✅ Минималистичная шапка: без плашки */}
         <div style={styles.header}>
           <div style={styles.title}>Нашенское</div>
 
@@ -388,7 +379,7 @@ export default function App() {
                           <div style={styles.cardName}>{p.name}</div>
                           {p.description ? <div style={styles.cardDesc}>{p.description}</div> : null}
 
-                          {/* ✅ ИСПРАВЛЕНО: цена без дубля */}
+                          {/* ✅ Цена: цветная только сумма */}
                           <div style={styles.cardMeta}>
                             <span style={{ color: styles.colors.primary, fontWeight: 950 }}>
                               {money(p.price)} ₽
@@ -589,9 +580,6 @@ export default function App() {
   );
 }
 
-/**
- * Стили + палитра (ТОЛЬКО твои цвета)
- */
 const styles: Record<string, React.CSSProperties> & {
   colors: {
     ink: string;
@@ -664,7 +652,7 @@ const styles: Record<string, React.CSSProperties> & {
     color: "#264653",
   },
 
-  // ✅ Исправлено: шапка стала мягче/менее “жирной”
+  // ✅ Минимализм: шапка без фона/blur/рамок
   header: {
     position: "sticky",
     top: 0,
@@ -674,20 +662,16 @@ const styles: Record<string, React.CSSProperties> & {
     justifyContent: "space-between",
     gap: 10,
     marginBottom: 12,
-    padding: "10px 0",
-    background: "rgba(255,255,255,0.22)",
-    backdropFilter: "blur(8px)",
-    WebkitBackdropFilter: "blur(8px)",
-    borderBottom: "1px solid rgba(38,70,83,0.06)",
+    padding: "6px 0",
+    background: "transparent",
+    borderBottom: "none",
   },
 
-  // ✅ Заголовок чуть спокойнее
   title: {
-    fontSize: 30,
-    fontWeight: 900,
-    letterSpacing: -0.5,
+    fontSize: 28,
+    fontWeight: 950,
+    letterSpacing: -0.6,
     color: "#264653",
-    opacity: 0.92,
   },
 
   tabs: { display: "flex", gap: 10 },
@@ -774,8 +758,6 @@ const styles: Record<string, React.CSSProperties> & {
   cardBody: { padding: 12, display: "flex", flexDirection: "column", gap: 8 },
   cardName: { fontSize: 18, fontWeight: 950, lineHeight: 1.15, color: "#264653" },
   cardDesc: { fontSize: 13, color: "rgba(38,70,83,0.90)", lineHeight: 1.25, fontWeight: 700 },
-
-  // общий стиль строки цены (цвет делаем нейтральный, а цену красим span-ом)
   cardMeta: { color: "#111111", fontWeight: 950 },
 
   buyBtn: {
