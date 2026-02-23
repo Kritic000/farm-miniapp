@@ -645,7 +645,7 @@ export default function App() {
               </>
             )}
 
-            {/* ✅ КОРЗИНА (исправленная верстка) */}
+            {/* ✅ КОРЗИНА (исправленная верстка под длинные названия) */}
             {tab === "cart" && (
               <div style={styles.panel}>
                 {cartItems.length === 0 ? (
@@ -1215,16 +1215,7 @@ const styles: Record<string, React.CSSProperties> & {
 
   qtyInline: { display: "flex", alignItems: "center", gap: 8, marginTop: 4 },
 
-  panel: {
-    background: "rgba(255,255,255,0.80)",
-    borderRadius: 18,
-    padding: 12,
-    boxShadow: "0 10px 22px rgba(38,70,83,0.14)",
-    border: "1px solid rgba(38,70,83,0.10)",
-    boxSizing: "border-box",
-  },
-
-  // (старые cart стили оставлены — не мешают)
+  // старые кнопки +/- (для каталога)
   qtyBtn: {
     width: 34,
     height: 34,
@@ -1237,11 +1228,21 @@ const styles: Record<string, React.CSSProperties> & {
     color: "#264653",
     boxSizing: "border-box",
   },
+
   qtyNum: {
     minWidth: 24,
     textAlign: "center",
     fontWeight: 650,
     color: "#264653",
+  },
+
+  panel: {
+    background: "rgba(255,255,255,0.80)",
+    borderRadius: 18,
+    padding: 12,
+    boxShadow: "0 10px 22px rgba(38,70,83,0.14)",
+    border: "1px solid rgba(38,70,83,0.10)",
+    boxSizing: "border-box",
   },
 
   totalBlock: {
@@ -1486,10 +1487,10 @@ const styles: Record<string, React.CSSProperties> & {
     fontWeight: 650,
   },
 
-  // ===== CART (новая аккуратная разметка) =====
+  // ===== CART (новая аккуратная разметка, чтобы названия влезали) =====
   cartRow2: {
     display: "grid",
-    gridTemplateColumns: "1fr auto auto",
+    gridTemplateColumns: "minmax(0, 1fr) 112px 70px", // ✅ больше места названию
     gap: 10,
     alignItems: "center",
     padding: "12px 0",
@@ -1503,7 +1504,8 @@ const styles: Record<string, React.CSSProperties> & {
   },
 
   cartName2: {
-    fontWeight: 700,
+    fontWeight: 750,
+    fontSize: 14, // ✅ чтобы длинные названия помещались лучше
     color: "#264653",
     lineHeight: 1.15,
     display: "-webkit-box",
@@ -1525,7 +1527,7 @@ const styles: Record<string, React.CSSProperties> & {
     display: "inline-flex",
     alignItems: "center",
     gap: 6,
-    padding: "6px 8px",
+    padding: "6px 6px", // ✅ компактнее
     borderRadius: 14,
     border: "1px solid rgba(38,70,83,0.12)",
     background: "rgba(255,255,255,0.70)",
@@ -1533,9 +1535,9 @@ const styles: Record<string, React.CSSProperties> & {
   },
 
   qtyBtn2: {
-    width: 32,
-    height: 32,
-    borderRadius: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 10,
     border: "1px solid rgba(38,70,83,0.14)",
     background: "rgba(255,255,255,0.92)",
     fontSize: 18,
@@ -1545,7 +1547,7 @@ const styles: Record<string, React.CSSProperties> & {
   },
 
   qtyNum2: {
-    minWidth: 20,
+    minWidth: 18,
     textAlign: "center",
     fontWeight: 800,
     color: "#264653",
