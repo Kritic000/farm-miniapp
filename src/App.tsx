@@ -199,6 +199,9 @@ export default function App() {
 
   const [sending, setSending] = useState(false);
 
+  // ✅ zoom (увеличение фото)
+  const [zoomSrc, setZoomSrc] = useState<string | null>(null);
+
   // orders
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState("");
@@ -496,6 +499,23 @@ export default function App() {
         </div>
       )}
 
+      {/* ✅ ZOOM MODAL */}
+      {zoomSrc && (
+        <div style={styles.zoomOverlay} onClick={() => setZoomSrc(null)}>
+          <div
+            style={styles.zoomBox}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <button style={styles.zoomClose} onClick={() => setZoomSrc(null)}>
+              ×
+            </button>
+            <img src={zoomSrc} alt="Фото товара" style={styles.zoomImg} />
+          </div>
+        </div>
+      )}
+
       <div style={styles.container}>
         {/* ===== HEADER ===== */}
         <div style={styles.headerGrid}>
@@ -580,6 +600,7 @@ export default function App() {
                             style={styles.cardImg}
                             loading="lazy"
                             decoding="async"
+                            onClick={() => setZoomSrc(p.image || null)}
                             onError={(e) => {
                               (e.currentTarget as HTMLImageElement).style.display =
                                 "none";
@@ -676,9 +697,7 @@ export default function App() {
                             <div style={styles.qtyNum2}>{it.qty}</div>
                             <button
                               style={styles.qtyBtn2}
-                              onClick={() =>
-                                setQty(it.product.id, it.qty + 1)
-                              }
+                              onClick={() => setQty(it.product.id, it.qty + 1)}
                               aria-label="Плюс"
                             >
                               +
@@ -1145,6 +1164,7 @@ const styles: Record<string, React.CSSProperties> & {
     objectFit: "cover",
     display: "block",
     alignSelf: "start",
+    cursor: "zoom-in", // ✅ кликабельно
   },
 
   cardImgPlaceholder: {
@@ -1505,7 +1525,7 @@ const styles: Record<string, React.CSSProperties> & {
     color: "#264653",
     lineHeight: 1.18,
     display: "-webkit-box",
-    WebkitLineClamp: 3, // ✅ 3 строки — чтобы точно читалось
+    WebkitLineClamp: 3,
     WebkitBoxOrient: "vertical",
     overflow: "hidden",
   },
@@ -1575,5 +1595,53 @@ const styles: Record<string, React.CSSProperties> & {
     alignItems: "center",
     justifyContent: "center",
     boxShadow: "0 8px 14px rgba(231,111,81,0.12)",
+  },
+
+  // ===== ZOOM STYLES =====
+  zoomOverlay: {
+    position: "fixed",
+    inset: 0,
+    zIndex: 10000,
+    background: "rgba(0,0,0,0.55)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+  },
+
+  zoomBox: {
+    position: "relative",
+    width: "min(520px, 100%)",
+    maxHeight: "85vh",
+    background: "rgba(255,255,255,0.92)",
+    borderRadius: 18,
+    padding: 10,
+    boxShadow: "0 18px 40px rgba(0,0,0,0.35)",
+    overflow: "hidden",
+  },
+
+  zoomImg: {
+    width: "100%",
+    height: "auto",
+    maxHeight: "80vh",
+    objectFit: "contain",
+    borderRadius: 14,
+    display: "block",
+  },
+
+  zoomClose: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    border: "1px solid rgba(38,70,83,0.16)",
+    background: "rgba(255,255,255,0.85)",
+    cursor: "pointer",
+    fontSize: 22,
+    lineHeight: 1,
+    color: "#264653",
+    boxShadow: "0 8px 14px rgba(0,0,0,0.12)",
   },
 };
