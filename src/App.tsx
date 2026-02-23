@@ -50,7 +50,7 @@ const PRODUCTS_CACHE_KEY = "farm_products_cache_v1";
 const PRODUCTS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 минут
 const LAST_PHONE_KEY = "farm_last_phone_v1";
 
-// ✅ для защиты от дублей заказа
+// ✅ защита от дублей заказа на клиенте
 const PENDING_ORDER_ID_KEY = "farm_pending_order_id_v1";
 
 const DELIVERY_FEE = 200;
@@ -95,9 +95,6 @@ function humanStatus(s: string) {
 }
 
 // нормализуем путь картинки из таблицы:
-// - "public/images/xxx.jpg" -> "/images/xxx.jpg"
-// - "/images/xxx.jpg" -> "/images/xxx.jpg"
-// - "images/xxx.jpg" -> "/images/xxx.jpg"
 function normalizeImagePath(img?: string): string | undefined {
   const s = String(img || "").trim();
   if (!s) return undefined;
@@ -142,12 +139,12 @@ function saveLastPhone(phone: string) {
   } catch {}
 }
 
-// fetch с таймаутом (Apps Script может “просыпаться” долго)
+// fetch с таймаутом
 async function fetchWithTimeout(
   input: RequestInfo,
   init: RequestInit & { timeoutMs?: number } = {}
 ) {
-  const { timeoutMs = 25000, ...rest } = init; // 25 секунд
+  const { timeoutMs = 25000, ...rest } = init;
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -158,7 +155,7 @@ async function fetchWithTimeout(
   }
 }
 
-// ✅ Генерация orderId + повторное использование при “подвисании” сети
+// ✅ один orderId на попытку (если сеть подвисла — повторяем тот же orderId)
 function makeOrderId() {
   const pending = sessionStorage.getItem(PENDING_ORDER_ID_KEY);
   if (pending) return pending;
@@ -178,7 +175,7 @@ function clearPendingOrderId() {
 }
 
 export default function App() {
-  // === ВАЖНО: токен должен совпадать с API_TOKEN в Apps Script ===
+  // === токен должен совпадать с API_TOKEN в Apps Script ===
   const API_TOKEN = "Kjhytccb18@";
 
   const [loading, setLoading] = useState(true);
@@ -232,7 +229,7 @@ export default function App() {
     if (p.length >= 6) saveLastPhone(p);
   }, [phone]);
 
-  // Быстрая загрузка ассортимента: сначала кэш, потом сеть
+  // Быстрая загрузка ассортимента: кэш -> сеть
   useEffect(() => {
     let cancelled = false;
 
@@ -247,14 +244,12 @@ export default function App() {
         setError("");
         setLoadingHint("");
 
-        // 1) показать кэш мгновенно
         if (hasFreshCache && cached) {
           setProducts(cached.products);
           setLoading(false);
           setLoadingHint("Обновляем ассортимент…");
         }
 
-        // 2) подтянуть с сервера
         const url = `${API_URL}?action=products&ts=${Date.now()}`;
         const res = await fetchWithTimeout(url, {
           method: "GET",
@@ -371,9 +366,7 @@ export default function App() {
       return;
     }
 
-    // ✅ один id на “попытку заказа”
     const orderId = makeOrderId();
-
     const tg = getTgUser();
 
     const payload = {
@@ -418,7 +411,6 @@ export default function App() {
           : "✅ Заказ отправлен! Мы свяжемся для подтверждения.",
       });
 
-      // ✅ очищаем pending id только после успеха
       clearPendingOrderId();
 
       setCart({});
@@ -645,7 +637,7 @@ export default function App() {
               </>
             )}
 
-            {/* ✅ КОРЗИНА (исправленная верстка под длинные названия) */}
+            {/* ✅ КОРЗИНА (2 колонки: слева текст, справа сумма/qty/удалить) */}
             {tab === "cart" && (
               <div style={styles.panel}>
                 {cartItems.length === 0 ? (
@@ -666,28 +658,33 @@ export default function App() {
                           </div>
                         </div>
 
-                        <div style={styles.cartQty2}>
-                          <button
-                            style={styles.qtyBtn2}
-                            onClick={() => setQty(it.product.id, it.qty - 1)}
-                            aria-label="Минус"
-                          >
-                            −
-                          </button>
-                          <div style={styles.qtyNum2}>{it.qty}</div>
-                          <button
-                            style={styles.qtyBtn2}
-                            onClick={() => setQty(it.product.id, it.qty + 1)}
-                            aria-label="Плюс"
-                          >
-                            +
-                          </button>
-                        </div>
-
                         <div style={styles.cartRight2}>
                           <div style={styles.cartSum2}>
                             {money(it.qty * it.product.price)} ₽
                           </div>
+
+                          <div style={styles.cartQty2}>
+                            <button
+                              style={styles.qtyBtn2}
+                              onClick={() =>
+                                setQty(it.product.id, it.qty - 1)
+                              }
+                              aria-label="Минус"
+                            >
+                              −
+                            </button>
+                            <div style={styles.qtyNum2}>{it.qty}</div>
+                            <button
+                              style={styles.qtyBtn2}
+                              onClick={() =>
+                                setQty(it.product.id, it.qty + 1)
+                              }
+                              aria-label="Плюс"
+                            >
+                              +
+                            </button>
+                          </div>
+
                           <button
                             style={styles.removeBtn2}
                             onClick={() => setQty(it.product.id, 0)}
@@ -1215,7 +1212,7 @@ const styles: Record<string, React.CSSProperties> & {
 
   qtyInline: { display: "flex", alignItems: "center", gap: 8, marginTop: 4 },
 
-  // старые кнопки +/- (для каталога)
+  // для каталога
   qtyBtn: {
     width: 34,
     height: 34,
@@ -1228,7 +1225,6 @@ const styles: Record<string, React.CSSProperties> & {
     color: "#264653",
     boxSizing: "border-box",
   },
-
   qtyNum: {
     minWidth: 24,
     textAlign: "center",
@@ -1487,12 +1483,12 @@ const styles: Record<string, React.CSSProperties> & {
     fontWeight: 650,
   },
 
-  // ===== CART (новая аккуратная разметка, чтобы названия влезали) =====
+  // ===== CART (2 колонки — максимум места под название) =====
   cartRow2: {
     display: "grid",
-    gridTemplateColumns: "minmax(0, 1fr) 112px 70px", // ✅ больше места названию
+    gridTemplateColumns: "minmax(0, 1fr) 132px",
     gap: 10,
-    alignItems: "center",
+    alignItems: "start",
     padding: "12px 0",
     borderBottom: "1px solid rgba(38,70,83,0.10)",
   },
@@ -1505,11 +1501,11 @@ const styles: Record<string, React.CSSProperties> & {
 
   cartName2: {
     fontWeight: 750,
-    fontSize: 14, // ✅ чтобы длинные названия помещались лучше
+    fontSize: 15,
     color: "#264653",
-    lineHeight: 1.15,
+    lineHeight: 1.18,
     display: "-webkit-box",
-    WebkitLineClamp: 2,
+    WebkitLineClamp: 3, // ✅ 3 строки — чтобы точно читалось
     WebkitBoxOrient: "vertical",
     overflow: "hidden",
   },
@@ -1523,11 +1519,23 @@ const styles: Record<string, React.CSSProperties> & {
     textOverflow: "ellipsis",
   },
 
+  cartRight2: {
+    display: "grid",
+    justifyItems: "end",
+    gap: 8,
+  },
+
+  cartSum2: {
+    fontWeight: 800,
+    color: "#264653",
+    whiteSpace: "nowrap",
+  },
+
   cartQty2: {
     display: "inline-flex",
     alignItems: "center",
     gap: 6,
-    padding: "6px 6px", // ✅ компактнее
+    padding: "6px 6px",
     borderRadius: 14,
     border: "1px solid rgba(38,70,83,0.12)",
     background: "rgba(255,255,255,0.70)",
@@ -1551,18 +1559,6 @@ const styles: Record<string, React.CSSProperties> & {
     textAlign: "center",
     fontWeight: 800,
     color: "#264653",
-  },
-
-  cartRight2: {
-    display: "grid",
-    justifyItems: "end",
-    gap: 6,
-  },
-
-  cartSum2: {
-    fontWeight: 800,
-    color: "#264653",
-    whiteSpace: "nowrap",
   },
 
   removeBtn2: {
