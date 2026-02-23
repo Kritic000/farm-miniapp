@@ -50,6 +50,9 @@ const PRODUCTS_CACHE_KEY = "farm_products_cache_v1";
 const PRODUCTS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 минут
 const LAST_PHONE_KEY = "farm_last_phone_v1";
 
+// ✅ для защиты от дублей заказа
+const PENDING_ORDER_ID_KEY = "farm_pending_order_id_v1";
+
 const DELIVERY_FEE = 200;
 const FREE_DELIVERY_FROM = 2000;
 
@@ -153,6 +156,25 @@ async function fetchWithTimeout(
   } finally {
     clearTimeout(t);
   }
+}
+
+// ✅ Генерация orderId + повторное использование при “подвисании” сети
+function makeOrderId() {
+  const pending = sessionStorage.getItem(PENDING_ORDER_ID_KEY);
+  if (pending) return pending;
+
+  const id =
+    (crypto as any)?.randomUUID?.() ||
+    `oid_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+
+  sessionStorage.setItem(PENDING_ORDER_ID_KEY, id);
+  return id;
+}
+
+function clearPendingOrderId() {
+  try {
+    sessionStorage.removeItem(PENDING_ORDER_ID_KEY);
+  } catch {}
 }
 
 export default function App() {
@@ -349,10 +371,14 @@ export default function App() {
       return;
     }
 
+    // ✅ один id на “попытку заказа”, чтобы не было дублей
+    const orderId = makeOrderId();
+
     const tg = getTgUser();
 
     const payload = {
       token: API_TOKEN,
+      orderId, // ✅ отправляем на сервер
       tg: tg || {},
       name: customerName.trim(),
       phone: phone.trim(),
@@ -386,10 +412,16 @@ export default function App() {
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
       if (data?.error) throw new Error(data.error);
 
+      // ✅ если сервер сказал duplicate — всё равно считаем успехом (он уже записан)
       setToast({
         type: "success",
-        text: "✅ Заказ отправлен! Мы свяжемся для подтверждения.",
+        text: data?.duplicate
+          ? "✅ Заказ уже был отправлен (повтор не записан)."
+          : "✅ Заказ отправлен! Мы свяжемся для подтверждения.",
       });
+
+      // ✅ очищаем pending id только после успеха/duplicate
+      clearPendingOrderId();
 
       setCart({});
       setAddress("");
@@ -402,6 +434,7 @@ export default function App() {
         type: "error",
         text: `Не удалось отправить заказ: ${e?.message || "Ошибка"}`,
       });
+      // pending id НЕ чистим — чтобы повторная отправка шла с тем же orderId
     } finally {
       setSending(false);
     }
@@ -477,7 +510,7 @@ export default function App() {
       )}
 
       <div style={styles.container}>
-        {/* ===== HEADER (вариант 2: слева бренд+товары, справа корзина+заказы) ===== */}
+        {/* ===== HEADER ===== */}
         <div style={styles.headerGrid}>
           <div style={styles.headerLeft}>
             <div style={styles.title}>Нашенское</div>
@@ -497,7 +530,9 @@ export default function App() {
             <button
               style={{
                 ...styles.navBtn,
-                ...(tab === "cart" || tab === "checkout" ? styles.navBtnActive : {}),
+                ...(tab === "cart" || tab === "checkout"
+                  ? styles.navBtnActive
+                  : {}),
               }}
               onClick={() => setTab("cart")}
             >
@@ -521,7 +556,9 @@ export default function App() {
           <div style={styles.infoMuted}>{loadingHint}</div>
         )}
         {error && (
-          <div style={{ ...styles.info, color: styles.colors.danger }}>{error}</div>
+          <div style={{ ...styles.info, color: styles.colors.danger }}>
+            {error}
+          </div>
         )}
 
         {!loading && !error && (
@@ -582,7 +619,10 @@ export default function App() {
                           </div>
 
                           {q === 0 ? (
-                            <button style={styles.buyBtn} onClick={() => addToCart(p)}>
+                            <button
+                              style={styles.buyBtn}
+                              onClick={() => addToCart(p)}
+                            >
                               В корзину
                             </button>
                           ) : (
@@ -671,16 +711,23 @@ export default function App() {
                             </span>
                           )}
                         </div>
-                        <div style={{ fontWeight: 700 }}>{money(delivery)} ₽</div>
+                        <div style={{ fontWeight: 700 }}>
+                          {money(delivery)} ₽
+                        </div>
                       </div>
 
                       <div style={styles.totalRowBig}>
                         <div>Итого</div>
-                        <div style={{ fontWeight: 800 }}>{money(grandTotal)} ₽</div>
+                        <div style={{ fontWeight: 800 }}>
+                          {money(grandTotal)} ₽
+                        </div>
                       </div>
                     </div>
 
-                    <button style={styles.primaryBtn} onClick={() => setTab("checkout")}>
+                    <button
+                      style={styles.primaryBtn}
+                      onClick={() => setTab("checkout")}
+                    >
                       Оформить
                     </button>
                   </>
@@ -716,7 +763,8 @@ export default function App() {
                 />
 
                 <label style={styles.label}>
-                  Адрес доставки <span style={{ color: styles.colors.danger }}>*</span>
+                  Адрес доставки{" "}
+                  <span style={{ color: styles.colors.danger }}>*</span>
                 </label>
                 <input
                   style={styles.input}
@@ -751,12 +799,16 @@ export default function App() {
                         </span>
                       )}
                     </div>
-                    <div style={{ fontWeight: 700 }}>{money(delivery)} ₽</div>
+                    <div style={{ fontWeight: 700 }}>
+                      {money(delivery)} ₽
+                    </div>
                   </div>
 
                   <div style={styles.totalRowBig}>
                     <div>Итого</div>
-                    <div style={{ fontWeight: 800 }}>{money(grandTotal)} ₽</div>
+                    <div style={{ fontWeight: 800 }}>
+                      {money(grandTotal)} ₽
+                    </div>
                   </div>
                 </div>
 
@@ -781,7 +833,8 @@ export default function App() {
                 </button>
 
                 <div style={styles.note}>
-                  Оплата пока не принимается в приложении — мы свяжемся после оформления.
+                  Оплата пока не принимается в приложении — мы свяжемся после
+                  оформления.
                 </div>
               </div>
             )}
@@ -820,22 +873,32 @@ export default function App() {
                   {orders.map((o, idx) => (
                     <div key={idx} style={styles.orderCard}>
                       <div style={styles.orderTop}>
-                        <div style={styles.orderDate}>{formatDate(o.createdAt)}</div>
-                        <div style={styles.orderStatus}>{humanStatus(o.status)}</div>
+                        <div style={styles.orderDate}>
+                          {formatDate(o.createdAt)}
+                        </div>
+                        <div style={styles.orderStatus}>
+                          {humanStatus(o.status)}
+                        </div>
                       </div>
 
                       <div style={styles.orderTotals}>
                         <div style={styles.orderRow}>
                           <div>Товары</div>
-                          <div style={{ fontWeight: 700 }}>{money(o.total)} ₽</div>
+                          <div style={{ fontWeight: 700 }}>
+                            {money(o.total)} ₽
+                          </div>
                         </div>
                         <div style={styles.orderRow}>
                           <div>Доставка</div>
-                          <div style={{ fontWeight: 700 }}>{money(o.delivery)} ₽</div>
+                          <div style={{ fontWeight: 700 }}>
+                            {money(o.delivery)} ₽
+                          </div>
                         </div>
                         <div style={styles.orderRowBig}>
                           <div>Итого</div>
-                          <div style={{ fontWeight: 800 }}>{money(o.grandTotal)} ₽</div>
+                          <div style={{ fontWeight: 800 }}>
+                            {money(o.grandTotal)} ₽
+                          </div>
                         </div>
                       </div>
 
@@ -843,15 +906,22 @@ export default function App() {
                         {Array.isArray(o.items) &&
                           o.items.slice(0, 20).map((it, j) => (
                             <div key={j} style={styles.orderItemRow}>
-                              <div style={styles.orderItemName} title={it.name}>
+                              <div
+                                style={styles.orderItemName}
+                                title={it.name}
+                              >
                                 {it.name}
                               </div>
                               <div style={styles.orderItemQty}>×{it.qty}</div>
-                              <div style={styles.orderItemSum}>{money(it.sum)} ₽</div>
+                              <div style={styles.orderItemSum}>
+                                {money(it.sum)} ₽
+                              </div>
                             </div>
                           ))}
                         {Array.isArray(o.items) && o.items.length > 20 ? (
-                          <div style={styles.infoMuted}>Показаны первые 20 позиций…</div>
+                          <div style={styles.infoMuted}>
+                            Показаны первые 20 позиций…
+                          </div>
                         ) : null}
                       </div>
                     </div>
@@ -919,7 +989,7 @@ const styles: Record<string, React.CSSProperties> & {
     border: "1px solid rgba(38,70,83,0.10)",
     backdropFilter: "blur(8px)",
     WebkitBackdropFilter: "blur(8px)",
-    overflow: "hidden", // важное: ничего не вылезет за края
+    overflow: "hidden",
   },
 
   toast: {
@@ -954,7 +1024,6 @@ const styles: Record<string, React.CSSProperties> & {
     color: "#264653",
   },
 
-  // ===== FIX: стабильная шапка без вылезаний =====
   headerGrid: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
@@ -986,15 +1055,14 @@ const styles: Record<string, React.CSSProperties> & {
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
-    
-    height: 42,              // ✅ как у кнопок
-    display: "flex",         // ✅
-    alignItems: "center",    // ✅ вертикально по центру
-    marginLeft: 9,   // ← попробуй 4–8
+    height: 42,
+    display: "flex",
+    alignItems: "center",
+    marginLeft: 9,
   },
 
   navBtn: {
-    width: "100%", // одинаковая ширина в своей колонке
+    width: "100%",
     maxWidth: "100%",
     boxSizing: "border-box",
     border: "1px solid rgba(38,70,83,0.18)",
@@ -1108,7 +1176,6 @@ const styles: Record<string, React.CSSProperties> & {
     overflow: "hidden",
   },
 
-  // 5 строк описания
   cardDesc: {
     fontSize: 12,
     color: "rgba(38,70,83,0.80)",
@@ -1439,25 +1506,3 @@ const styles: Record<string, React.CSSProperties> & {
     fontWeight: 650,
   },
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
