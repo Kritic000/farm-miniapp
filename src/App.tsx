@@ -226,7 +226,7 @@ export default function App() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  // сохраняем телефон (чтобы "Мои заказы" могли работать даже если tg id недоступен)
+  // сохраняем телефон
   useEffect(() => {
     const p = phone.trim();
     if (p.length >= 6) saveLastPhone(p);
@@ -371,14 +371,14 @@ export default function App() {
       return;
     }
 
-    // ✅ один id на “попытку заказа”, чтобы не было дублей
+    // ✅ один id на “попытку заказа”
     const orderId = makeOrderId();
 
     const tg = getTgUser();
 
     const payload = {
       token: API_TOKEN,
-      orderId, // ✅ отправляем на сервер
+      orderId,
       tg: tg || {},
       name: customerName.trim(),
       phone: phone.trim(),
@@ -400,7 +400,6 @@ export default function App() {
     try {
       setSending(true);
 
-      // Важно: text/plain уменьшает шанс preflight/CORS проблем в Apps Script
       const res = await fetch(API_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
@@ -412,7 +411,6 @@ export default function App() {
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
       if (data?.error) throw new Error(data.error);
 
-      // ✅ если сервер сказал duplicate — всё равно считаем успехом (он уже записан)
       setToast({
         type: "success",
         text: data?.duplicate
@@ -420,21 +418,20 @@ export default function App() {
           : "✅ Заказ отправлен! Мы свяжемся для подтверждения.",
       });
 
-      // ✅ очищаем pending id только после успеха/duplicate
+      // ✅ очищаем pending id только после успеха
       clearPendingOrderId();
 
       setCart({});
       setAddress("");
       setComment("");
       setCustomerName("");
-      // телефон оставляем
       setTab("catalog");
     } catch (e: any) {
       setToast({
         type: "error",
         text: `Не удалось отправить заказ: ${e?.message || "Ошибка"}`,
       });
-      // pending id НЕ чистим — чтобы повторная отправка шла с тем же orderId
+      // pending id НЕ чистим — повтор будет с тем же orderId
     } finally {
       setSending(false);
     }
@@ -445,7 +442,6 @@ export default function App() {
     const tgUserId = tg?.id ? String(tg.id) : "";
     const phoneDigits = normalizePhone(phone);
 
-    // если нет ни tgUserId, ни телефона — не грузим
     if (!tgUserId && phoneDigits.length < 6) {
       setOrders([]);
       setOrdersError(
@@ -484,7 +480,6 @@ export default function App() {
     }
   }
 
-  // когда открыли вкладку orders — подгружаем
   useEffect(() => {
     if (tab !== "orders") return;
     loadMyOrders();
@@ -650,6 +645,7 @@ export default function App() {
               </>
             )}
 
+            {/* ✅ КОРЗИНА (исправленная верстка) */}
             {tab === "cart" && (
               <div style={styles.panel}>
                 {cartItems.length === 0 ? (
@@ -657,40 +653,50 @@ export default function App() {
                 ) : (
                   <>
                     {cartItems.map((it) => (
-                      <div key={it.product.id} style={styles.cartRow}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={styles.cartName}>{it.product.name}</div>
-                          <div style={styles.cartMeta}>
+                      <div key={it.product.id} style={styles.cartRow2}>
+                        <div style={styles.cartLeft2}>
+                          <div
+                            style={styles.cartName2}
+                            title={it.product.name}
+                          >
+                            {it.product.name}
+                          </div>
+                          <div style={styles.cartMeta2}>
                             {money(it.product.price)} ₽ / {it.product.unit}
                           </div>
                         </div>
 
-                        <div style={styles.qtyBox}>
+                        <div style={styles.cartQty2}>
                           <button
-                            style={styles.qtyBtn}
+                            style={styles.qtyBtn2}
                             onClick={() => setQty(it.product.id, it.qty - 1)}
+                            aria-label="Минус"
                           >
                             −
                           </button>
-                          <div style={styles.qtyNum}>{it.qty}</div>
+                          <div style={styles.qtyNum2}>{it.qty}</div>
                           <button
-                            style={styles.qtyBtn}
+                            style={styles.qtyBtn2}
                             onClick={() => setQty(it.product.id, it.qty + 1)}
+                            aria-label="Плюс"
                           >
                             +
                           </button>
                         </div>
 
-                        <div style={styles.cartSum}>
-                          {money(it.qty * it.product.price)} ₽
+                        <div style={styles.cartRight2}>
+                          <div style={styles.cartSum2}>
+                            {money(it.qty * it.product.price)} ₽
+                          </div>
+                          <button
+                            style={styles.removeBtn2}
+                            onClick={() => setQty(it.product.id, 0)}
+                            aria-label="Удалить"
+                            title="Удалить"
+                          >
+                            ×
+                          </button>
                         </div>
-
-                        <button
-                          style={styles.removeBtn}
-                          onClick={() => setQty(it.product.id, 0)}
-                        >
-                          ✕
-                        </button>
                       </div>
                     ))}
 
@@ -1218,18 +1224,7 @@ const styles: Record<string, React.CSSProperties> & {
     boxSizing: "border-box",
   },
 
-  cartRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    padding: "10px 0",
-    borderBottom: "1px solid rgba(38,70,83,0.10)",
-  },
-
-  cartName: { fontWeight: 650, color: "#264653" },
-  cartMeta: { color: "rgba(38,70,83,0.80)", fontWeight: 450, fontSize: 13 },
-
-  qtyBox: { display: "flex", alignItems: "center", gap: 6 },
+  // (старые cart стили оставлены — не мешают)
   qtyBtn: {
     width: 34,
     height: 34,
@@ -1242,26 +1237,11 @@ const styles: Record<string, React.CSSProperties> & {
     color: "#264653",
     boxSizing: "border-box",
   },
-
   qtyNum: {
     minWidth: 24,
     textAlign: "center",
     fontWeight: 650,
     color: "#264653",
-  },
-
-  cartSum: { width: 90, textAlign: "right", fontWeight: 650, color: "#264653" },
-
-  removeBtn: {
-    border: "1px solid rgba(231,111,81,0.55)",
-    background: "rgba(231,111,81,0.16)",
-    color: "#264653",
-    borderRadius: 12,
-    fontSize: 16,
-    cursor: "pointer",
-    padding: "6px 10px",
-    boxShadow: "0 8px 14px rgba(231,111,81,0.14)",
-    boxSizing: "border-box",
   },
 
   totalBlock: {
@@ -1504,5 +1484,98 @@ const styles: Record<string, React.CSSProperties> & {
     fontSize: 13,
     color: "#264653",
     fontWeight: 650,
+  },
+
+  // ===== CART (новая аккуратная разметка) =====
+  cartRow2: {
+    display: "grid",
+    gridTemplateColumns: "1fr auto auto",
+    gap: 10,
+    alignItems: "center",
+    padding: "12px 0",
+    borderBottom: "1px solid rgba(38,70,83,0.10)",
+  },
+
+  cartLeft2: {
+    minWidth: 0,
+    display: "grid",
+    gap: 4,
+  },
+
+  cartName2: {
+    fontWeight: 700,
+    color: "#264653",
+    lineHeight: 1.15,
+    display: "-webkit-box",
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: "vertical",
+    overflow: "hidden",
+  },
+
+  cartMeta2: {
+    color: "rgba(38,70,83,0.75)",
+    fontWeight: 550,
+    fontSize: 12,
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
+
+  cartQty2: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "6px 8px",
+    borderRadius: 14,
+    border: "1px solid rgba(38,70,83,0.12)",
+    background: "rgba(255,255,255,0.70)",
+    boxShadow: "0 8px 14px rgba(38,70,83,0.08)",
+  },
+
+  qtyBtn2: {
+    width: 32,
+    height: 32,
+    borderRadius: 12,
+    border: "1px solid rgba(38,70,83,0.14)",
+    background: "rgba(255,255,255,0.92)",
+    fontSize: 18,
+    cursor: "pointer",
+    color: "#264653",
+    lineHeight: 1,
+  },
+
+  qtyNum2: {
+    minWidth: 20,
+    textAlign: "center",
+    fontWeight: 800,
+    color: "#264653",
+  },
+
+  cartRight2: {
+    display: "grid",
+    justifyItems: "end",
+    gap: 6,
+  },
+
+  cartSum2: {
+    fontWeight: 800,
+    color: "#264653",
+    whiteSpace: "nowrap",
+  },
+
+  removeBtn2: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    border: "1px solid rgba(231,111,81,0.55)",
+    background: "rgba(231,111,81,0.14)",
+    color: "#264653",
+    fontSize: 20,
+    cursor: "pointer",
+    lineHeight: 1,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    boxShadow: "0 8px 14px rgba(231,111,81,0.12)",
   },
 };
