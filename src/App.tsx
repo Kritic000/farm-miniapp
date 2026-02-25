@@ -1205,7 +1205,7 @@ const styles: Record<string, React.CSSProperties> & {
     lineHeight: 1.25,
     fontWeight: 450,
     display: "-webkit-box",
-    WebkitLineClamp: 5,
+    WebkitLineClamp: 6,
     WebkitBoxOrient: "vertical",
     overflow: "hidden",
   },
@@ -1645,3 +1645,4 @@ const styles: Record<string, React.CSSProperties> & {
     boxShadow: "0 8px 14px rgba(0,0,0,0.12)",
   },
 };
+
