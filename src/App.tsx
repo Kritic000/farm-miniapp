@@ -34,6 +34,7 @@ type OrderItem = {
 };
 
 type Order = {
+  orderId: string;
   createdAt: string;
   status: string;
   name?: string;
@@ -42,6 +43,7 @@ type Order = {
   delivery: number;
   grandTotal: number;
   items: OrderItem[];
+  cancelReason?: string;
 };
 
 type Toast = { type: "error" | "success" | "info"; text: string } | null;
@@ -50,7 +52,7 @@ const PRODUCTS_CACHE_KEY = "farm_products_cache_v1";
 const PRODUCTS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 минут
 const LAST_PHONE_KEY = "farm_last_phone_v1";
 
-// ✅ защита от дублей заказа на клиенте
+// ✅ анти-дубли заказа на клиенте
 const PENDING_ORDER_ID_KEY = "farm_pending_order_id_v1";
 
 const DELIVERY_FEE = 200;
@@ -94,7 +96,6 @@ function humanStatus(s: string) {
   return s || "—";
 }
 
-// нормализуем путь картинки из таблицы:
 function normalizeImagePath(img?: string): string | undefined {
   const s = String(img || "").trim();
   if (!s) return undefined;
@@ -139,7 +140,6 @@ function saveLastPhone(phone: string) {
   } catch {}
 }
 
-// fetch с таймаутом
 async function fetchWithTimeout(
   input: RequestInfo,
   init: RequestInit & { timeoutMs?: number } = {}
@@ -155,7 +155,6 @@ async function fetchWithTimeout(
   }
 }
 
-// ✅ один orderId на попытку (если сеть подвисла — повторяем тот же orderId)
 function makeOrderId() {
   const pending = sessionStorage.getItem(PENDING_ORDER_ID_KEY);
   if (pending) return pending;
@@ -175,7 +174,6 @@ function clearPendingOrderId() {
 }
 
 export default function App() {
-  // === токен должен совпадать с API_TOKEN в Apps Script ===
   const API_TOKEN = "Kjhytccb18@";
 
   const [loading, setLoading] = useState(true);
@@ -199,13 +197,17 @@ export default function App() {
 
   const [sending, setSending] = useState(false);
 
-  // ✅ zoom (увеличение фото)
+  // ✅ zoom
   const [zoomSrc, setZoomSrc] = useState<string | null>(null);
 
   // orders
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState("");
   const [orders, setOrders] = useState<Order[]>([]);
+
+  // ✅ cancel modal
+  const [cancelOrderId, setCancelOrderId] = useState<string | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
 
   // Telegram init
   useEffect(() => {
@@ -219,20 +221,20 @@ export default function App() {
     }
   }, []);
 
-  // Автозакрытие toast
+  // toast auto close
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 2500);
     return () => clearTimeout(t);
   }, [toast]);
 
-  // сохраняем телефон
+  // save phone
   useEffect(() => {
     const p = phone.trim();
     if (p.length >= 6) saveLastPhone(p);
   }, [phone]);
 
-  // Быстрая загрузка ассортимента: кэш -> сеть
+  // load products: cache -> network
   useEffect(() => {
     let cancelled = false;
 
@@ -254,10 +256,7 @@ export default function App() {
         }
 
         const url = `${API_URL}?action=products&ts=${Date.now()}`;
-        const res = await fetchWithTimeout(url, {
-          method: "GET",
-          timeoutMs: 25000,
-        });
+        const res = await fetchWithTimeout(url, { method: "GET", timeoutMs: 25000 });
         const data = await res.json();
 
         if (data?.error) throw new Error(data.error);
@@ -280,9 +279,7 @@ export default function App() {
         if (e?.name === "AbortError" && hasFreshCache) {
           setLoading(false);
           setError("");
-          setLoadingHint(
-            "Сервер отвечает медленно. Показан сохранённый ассортимент."
-          );
+          setLoadingHint("Сервер отвечает медленно. Показан сохранённый ассортимент.");
           return;
         }
 
@@ -356,8 +353,7 @@ export default function App() {
   function validateCheckout(): string | null {
     if (customerName.trim().length < 2) return "Укажи имя (минимум 2 символа).";
     if (phone.trim().length < 6) return "Укажи телефон (минимум 6 символов).";
-    if (address.trim().length < 5)
-      return "Укажи адрес доставки (минимум 5 символов).";
+    if (address.trim().length < 5) return "Укажи адрес доставки (минимум 5 символов).";
     if (cartItems.length === 0) return "Корзина пустая.";
     return null;
   }
@@ -426,7 +422,6 @@ export default function App() {
         type: "error",
         text: `Не удалось отправить заказ: ${e?.message || "Ошибка"}`,
       });
-      // pending id НЕ чистим — повтор будет с тем же orderId
     } finally {
       setSending(false);
     }
@@ -457,10 +452,7 @@ export default function App() {
         `&limit=30` +
         `&ts=${Date.now()}`;
 
-      const res = await fetchWithTimeout(url, {
-        method: "GET",
-        timeoutMs: 25000,
-      });
+      const res = await fetchWithTimeout(url, { method: "GET", timeoutMs: 25000 });
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
@@ -475,6 +467,46 @@ export default function App() {
     }
   }
 
+  // ✅ cancel order with reason
+  async function cancelOrderRequest(orderId: string, reason: string) {
+    const r = reason.trim();
+    if (r.length < 3) {
+      setToast({ type: "error", text: "Укажи причину отмены (минимум 3 символа)." });
+      return;
+    }
+
+    const tg = getTgUser();
+    const tgUserId = tg?.id ? String(tg.id) : "";
+    const phoneDigits = normalizePhone(phone);
+
+    try {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          token: API_TOKEN,
+          action: "cancelOrder",
+          orderId,
+          reason: r,
+          tgUserId,
+          phone: phoneDigits,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      if (data?.error) throw new Error(data.error);
+
+      setToast({ type: "success", text: "Заказ отменён." });
+      setCancelOrderId(null);
+      setCancelReason("");
+      loadMyOrders();
+    } catch (e: any) {
+      setToast({ type: "error", text: e?.message || "Не удалось отменить заказ" });
+    }
+  }
+
+  // load orders when tab opened
   useEffect(() => {
     if (tab !== "orders") return;
     loadMyOrders();
@@ -502,16 +534,46 @@ export default function App() {
       {/* ✅ ZOOM MODAL */}
       {zoomSrc && (
         <div style={styles.zoomOverlay} onClick={() => setZoomSrc(null)}>
-          <div
-            style={styles.zoomBox}
-            onClick={(e) => e.stopPropagation()}
-            role="dialog"
-            aria-modal="true"
-          >
+          <div style={styles.zoomBox} onClick={(e) => e.stopPropagation()}>
             <button style={styles.zoomClose} onClick={() => setZoomSrc(null)}>
               ×
             </button>
             <img src={zoomSrc} alt="Фото товара" style={styles.zoomImg} />
+          </div>
+        </div>
+      )}
+
+      {/* ✅ CANCEL MODAL */}
+      {cancelOrderId && (
+        <div style={styles.zoomOverlay} onClick={() => setCancelOrderId(null)}>
+          <div style={styles.zoomBox} onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontWeight: 800, marginBottom: 10 }}>
+              Причина отмены заказа
+            </div>
+
+            <textarea
+              style={styles.textarea}
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              placeholder="Например: ошибся адресом, не актуально, изменились планы…"
+            />
+
+            <button
+              style={styles.primaryBtn}
+              onClick={() => cancelOrderRequest(cancelOrderId, cancelReason)}
+            >
+              Подтвердить отмену
+            </button>
+
+            <button
+              style={styles.secondaryBtn}
+              onClick={() => {
+                setCancelOrderId(null);
+                setCancelReason("");
+              }}
+            >
+              Закрыть
+            </button>
           </div>
         </div>
       )}
@@ -563,9 +625,7 @@ export default function App() {
           <div style={styles.infoMuted}>{loadingHint}</div>
         )}
         {error && (
-          <div style={{ ...styles.info, color: styles.colors.danger }}>
-            {error}
-          </div>
+          <div style={{ ...styles.info, color: styles.colors.danger }}>{error}</div>
         )}
 
         {!loading && !error && (
@@ -627,10 +687,7 @@ export default function App() {
                           </div>
 
                           {q === 0 ? (
-                            <button
-                              style={styles.buyBtn}
-                              onClick={() => addToCart(p)}
-                            >
+                            <button style={styles.buyBtn} onClick={() => addToCart(p)}>
                               В корзину
                             </button>
                           ) : (
@@ -658,7 +715,7 @@ export default function App() {
               </>
             )}
 
-            {/* ✅ КОРЗИНА (2 колонки: слева текст, справа сумма/qty/удалить) */}
+            {/* ✅ CART (2 columns layout) */}
             {tab === "cart" && (
               <div style={styles.panel}>
                 {cartItems.length === 0 ? (
@@ -668,10 +725,7 @@ export default function App() {
                     {cartItems.map((it) => (
                       <div key={it.product.id} style={styles.cartRow2}>
                         <div style={styles.cartLeft2}>
-                          <div
-                            style={styles.cartName2}
-                            title={it.product.name}
-                          >
+                          <div style={styles.cartName2} title={it.product.name}>
                             {it.product.name}
                           </div>
                           <div style={styles.cartMeta2}>
@@ -687,10 +741,7 @@ export default function App() {
                           <div style={styles.cartQty2}>
                             <button
                               style={styles.qtyBtn2}
-                              onClick={() =>
-                                setQty(it.product.id, it.qty - 1)
-                              }
-                              aria-label="Минус"
+                              onClick={() => setQty(it.product.id, it.qty - 1)}
                             >
                               −
                             </button>
@@ -698,7 +749,6 @@ export default function App() {
                             <button
                               style={styles.qtyBtn2}
                               onClick={() => setQty(it.product.id, it.qty + 1)}
-                              aria-label="Плюс"
                             >
                               +
                             </button>
@@ -707,7 +757,6 @@ export default function App() {
                           <button
                             style={styles.removeBtn2}
                             onClick={() => setQty(it.product.id, 0)}
-                            aria-label="Удалить"
                             title="Удалить"
                           >
                             ×
@@ -733,23 +782,16 @@ export default function App() {
                             </span>
                           )}
                         </div>
-                        <div style={{ fontWeight: 700 }}>
-                          {money(delivery)} ₽
-                        </div>
+                        <div style={{ fontWeight: 700 }}>{money(delivery)} ₽</div>
                       </div>
 
                       <div style={styles.totalRowBig}>
                         <div>Итого</div>
-                        <div style={{ fontWeight: 800 }}>
-                          {money(grandTotal)} ₽
-                        </div>
+                        <div style={{ fontWeight: 800 }}>{money(grandTotal)} ₽</div>
                       </div>
                     </div>
 
-                    <button
-                      style={styles.primaryBtn}
-                      onClick={() => setTab("checkout")}
-                    >
+                    <button style={styles.primaryBtn} onClick={() => setTab("checkout")}>
                       Оформить
                     </button>
                   </>
@@ -785,8 +827,7 @@ export default function App() {
                 />
 
                 <label style={styles.label}>
-                  Адрес доставки{" "}
-                  <span style={{ color: styles.colors.danger }}>*</span>
+                  Адрес доставки <span style={{ color: styles.colors.danger }}>*</span>
                 </label>
                 <input
                   style={styles.input}
@@ -821,16 +862,12 @@ export default function App() {
                         </span>
                       )}
                     </div>
-                    <div style={{ fontWeight: 700 }}>
-                      {money(delivery)} ₽
-                    </div>
+                    <div style={{ fontWeight: 700 }}>{money(delivery)} ₽</div>
                   </div>
 
                   <div style={styles.totalRowBig}>
                     <div>Итого</div>
-                    <div style={{ fontWeight: 800 }}>
-                      {money(grandTotal)} ₽
-                    </div>
+                    <div style={{ fontWeight: 800 }}>{money(grandTotal)} ₽</div>
                   </div>
                 </div>
 
@@ -855,8 +892,7 @@ export default function App() {
                 </button>
 
                 <div style={styles.note}>
-                  Оплата пока не принимается в приложении — мы свяжемся после
-                  оформления.
+                  Оплата пока не принимается в приложении — мы свяжемся после оформления.
                 </div>
               </div>
             )}
@@ -893,59 +929,60 @@ export default function App() {
 
                 <div style={styles.ordersList}>
                   {orders.map((o, idx) => (
-                    <div key={idx} style={styles.orderCard}>
+                    <div key={o.orderId || idx} style={styles.orderCard}>
                       <div style={styles.orderTop}>
-                        <div style={styles.orderDate}>
-                          {formatDate(o.createdAt)}
-                        </div>
-                        <div style={styles.orderStatus}>
-                          {humanStatus(o.status)}
-                        </div>
+                        <div style={styles.orderDate}>{formatDate(o.createdAt)}</div>
+                        <div style={styles.orderStatus}>{humanStatus(o.status)}</div>
                       </div>
 
                       <div style={styles.orderTotals}>
                         <div style={styles.orderRow}>
                           <div>Товары</div>
-                          <div style={{ fontWeight: 700 }}>
-                            {money(o.total)} ₽
-                          </div>
+                          <div style={{ fontWeight: 700 }}>{money(o.total)} ₽</div>
                         </div>
                         <div style={styles.orderRow}>
                           <div>Доставка</div>
-                          <div style={{ fontWeight: 700 }}>
-                            {money(o.delivery)} ₽
-                          </div>
+                          <div style={{ fontWeight: 700 }}>{money(o.delivery)} ₽</div>
                         </div>
                         <div style={styles.orderRowBig}>
                           <div>Итого</div>
-                          <div style={{ fontWeight: 800 }}>
-                            {money(o.grandTotal)} ₽
-                          </div>
+                          <div style={{ fontWeight: 800 }}>{money(o.grandTotal)} ₽</div>
                         </div>
                       </div>
+
+                      {o.status === "canceled" && o.cancelReason ? (
+                        <div style={styles.cancelReason}>
+                          Причина отмены: {o.cancelReason}
+                        </div>
+                      ) : null}
 
                       <div style={styles.orderItems}>
                         {Array.isArray(o.items) &&
                           o.items.slice(0, 20).map((it, j) => (
                             <div key={j} style={styles.orderItemRow}>
-                              <div
-                                style={styles.orderItemName}
-                                title={it.name}
-                              >
+                              <div style={styles.orderItemName} title={it.name}>
                                 {it.name}
                               </div>
                               <div style={styles.orderItemQty}>×{it.qty}</div>
-                              <div style={styles.orderItemSum}>
-                                {money(it.sum)} ₽
-                              </div>
+                              <div style={styles.orderItemSum}>{money(it.sum)} ₽</div>
                             </div>
                           ))}
                         {Array.isArray(o.items) && o.items.length > 20 ? (
-                          <div style={styles.infoMuted}>
-                            Показаны первые 20 позиций…
-                          </div>
+                          <div style={styles.infoMuted}>Показаны первые 20 позиций…</div>
                         ) : null}
                       </div>
+
+                      {String(o.status || "").toLowerCase() === "new" && o.orderId ? (
+                        <button
+                          style={styles.cancelBtn}
+                          onClick={() => {
+                            setCancelOrderId(o.orderId);
+                            setCancelReason("");
+                          }}
+                        >
+                          Отменить заказ
+                        </button>
+                      ) : null}
                     </div>
                   ))}
                 </div>
@@ -955,7 +992,6 @@ export default function App() {
         )}
       </div>
 
-      {/* Плавающая корзина */}
       {tab === "catalog" && cartCount > 0 && (
         <button style={styles.floatingCart} onClick={() => setTab("cart")}>
           🛒 {cartCount} • {money(grandTotal)} ₽
@@ -965,9 +1001,6 @@ export default function App() {
   );
 }
 
-/**
- * Стили + палитра (ТОЛЬКО твои цвета)
- */
 const styles: Record<string, React.CSSProperties> & {
   colors: {
     ink: string;
@@ -1053,18 +1086,8 @@ const styles: Record<string, React.CSSProperties> & {
     alignItems: "start",
     marginBottom: 12,
   },
-
-  headerLeft: {
-    display: "grid",
-    gap: 10,
-    minWidth: 0,
-  },
-
-  headerRight: {
-    display: "grid",
-    gap: 10,
-    minWidth: 0,
-  },
+  headerLeft: { display: "grid", gap: 10, minWidth: 0 },
+  headerRight: { display: "grid", gap: 10, minWidth: 0 },
 
   title: {
     fontSize: 26,
@@ -1164,7 +1187,7 @@ const styles: Record<string, React.CSSProperties> & {
     objectFit: "cover",
     display: "block",
     alignSelf: "start",
-    cursor: "zoom-in", // ✅ кликабельно
+    cursor: "zoom-in",
   },
 
   cardImgPlaceholder: {
@@ -1205,7 +1228,7 @@ const styles: Record<string, React.CSSProperties> & {
     lineHeight: 1.25,
     fontWeight: 450,
     display: "-webkit-box",
-    WebkitLineClamp: 6,
+    WebkitLineClamp: 5,
     WebkitBoxOrient: "vertical",
     overflow: "hidden",
   },
@@ -1232,7 +1255,6 @@ const styles: Record<string, React.CSSProperties> & {
 
   qtyInline: { display: "flex", alignItems: "center", gap: 8, marginTop: 4 },
 
-  // для каталога
   qtyBtn: {
     width: 34,
     height: 34,
@@ -1245,6 +1267,7 @@ const styles: Record<string, React.CSSProperties> & {
     color: "#264653",
     boxSizing: "border-box",
   },
+
   qtyNum: {
     minWidth: 24,
     textAlign: "center",
@@ -1337,6 +1360,22 @@ const styles: Record<string, React.CSSProperties> & {
     color: "#264653",
   },
 
+  textarea: {
+    width: "100%",
+    boxSizing: "border-box",
+    padding: "12px 12px",
+    borderRadius: 14,
+    border: "1px solid rgba(38,70,83,0.16)",
+    marginTop: 6,
+    fontSize: 14,
+    background: "rgba(255,255,255,0.86)",
+    outline: "none",
+    boxShadow: "0 8px 14px rgba(38,70,83,0.08)",
+    color: "#264653",
+    minHeight: 90,
+    resize: "vertical",
+  },
+
   primaryBtn: {
     width: "100%",
     marginTop: 12,
@@ -1412,11 +1451,7 @@ const styles: Record<string, React.CSSProperties> & {
     boxShadow: "0 8px 14px rgba(38,70,83,0.08)",
   },
 
-  ordersList: {
-    display: "grid",
-    gap: 10,
-    marginTop: 10,
-  },
+  ordersList: { display: "grid", gap: 10, marginTop: 10 },
 
   orderCard: {
     background: "rgba(255,255,255,0.70)",
@@ -1434,15 +1469,8 @@ const styles: Record<string, React.CSSProperties> & {
     marginBottom: 8,
   },
 
-  orderDate: {
-    fontWeight: 650,
-    color: "#264653",
-  },
-
-  orderStatus: {
-    fontWeight: 650,
-    color: "rgba(38,70,83,0.85)",
-  },
+  orderDate: { fontWeight: 650, color: "#264653" },
+  orderStatus: { fontWeight: 650, color: "rgba(38,70,83,0.85)" },
 
   orderTotals: {
     display: "grid",
@@ -1471,10 +1499,7 @@ const styles: Record<string, React.CSSProperties> & {
     borderTop: "1px dashed rgba(38,70,83,0.20)",
   },
 
-  orderItems: {
-    display: "grid",
-    gap: 6,
-  },
+  orderItems: { display: "grid", gap: 6 },
 
   orderItemRow: {
     display: "grid",
@@ -1497,13 +1522,33 @@ const styles: Record<string, React.CSSProperties> & {
     fontWeight: 600,
   },
 
-  orderItemSum: {
-    fontSize: 13,
+  orderItemSum: { fontSize: 13, color: "#264653", fontWeight: 650 },
+
+  cancelBtn: {
+    width: "100%",
+    marginTop: 10,
+    border: "1px solid rgba(231,111,81,0.55)",
+    background: "rgba(231,111,81,0.14)",
     color: "#264653",
-    fontWeight: 650,
+    borderRadius: 14,
+    padding: "11px 12px",
+    fontWeight: 750,
+    cursor: "pointer",
+    boxShadow: "0 8px 14px rgba(231,111,81,0.12)",
+    boxSizing: "border-box",
   },
 
-  // ===== CART (2 колонки — максимум места под название) =====
+  cancelReason: {
+    marginTop: 8,
+    fontSize: 13,
+    color: "rgba(38,70,83,0.88)",
+    background: "rgba(244,162,97,0.16)",
+    border: "1px solid rgba(244,162,97,0.40)",
+    borderRadius: 12,
+    padding: "8px 10px",
+  },
+
+  // CART 2-column
   cartRow2: {
     display: "grid",
     gridTemplateColumns: "minmax(0, 1fr) 132px",
@@ -1513,11 +1558,7 @@ const styles: Record<string, React.CSSProperties> & {
     borderBottom: "1px solid rgba(38,70,83,0.10)",
   },
 
-  cartLeft2: {
-    minWidth: 0,
-    display: "grid",
-    gap: 4,
-  },
+  cartLeft2: { minWidth: 0, display: "grid", gap: 4 },
 
   cartName2: {
     fontWeight: 750,
@@ -1539,17 +1580,9 @@ const styles: Record<string, React.CSSProperties> & {
     textOverflow: "ellipsis",
   },
 
-  cartRight2: {
-    display: "grid",
-    justifyItems: "end",
-    gap: 8,
-  },
+  cartRight2: { display: "grid", justifyItems: "end", gap: 8 },
 
-  cartSum2: {
-    fontWeight: 800,
-    color: "#264653",
-    whiteSpace: "nowrap",
-  },
+  cartSum2: { fontWeight: 800, color: "#264653", whiteSpace: "nowrap" },
 
   cartQty2: {
     display: "inline-flex",
@@ -1574,12 +1607,7 @@ const styles: Record<string, React.CSSProperties> & {
     lineHeight: 1,
   },
 
-  qtyNum2: {
-    minWidth: 18,
-    textAlign: "center",
-    fontWeight: 800,
-    color: "#264653",
-  },
+  qtyNum2: { minWidth: 18, textAlign: "center", fontWeight: 800, color: "#264653" },
 
   removeBtn2: {
     width: 34,
@@ -1597,7 +1625,7 @@ const styles: Record<string, React.CSSProperties> & {
     boxShadow: "0 8px 14px rgba(231,111,81,0.12)",
   },
 
-  // ===== ZOOM STYLES =====
+  // ZOOM MODAL
   zoomOverlay: {
     position: "fixed",
     inset: 0,
@@ -1645,4 +1673,3 @@ const styles: Record<string, React.CSSProperties> & {
     boxShadow: "0 8px 14px rgba(0,0,0,0.12)",
   },
 };
-
