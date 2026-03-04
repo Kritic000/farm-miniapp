@@ -1,2 +1,2 @@
-export const API_URL = "https://script.google.com/macros/s/AKfycbyCNfafg5sEZNdMR-Pt4Zv7i-WvfFDsr_EnGIEFOHYf5VguMWy6fc0yZlSk9b6fPtTR2A/exec";
+export const API_URL = "https://script.google.com/macros/s/AKfycbykUY-QxtlNOxjg4kCFQkt1vSmBK_xdP9OpqG-R8h6QVH4gGNS74k9v38QlOW1gjPbcaw/exec";
 export const API_TOKEN = "Kjhytccb18@";
