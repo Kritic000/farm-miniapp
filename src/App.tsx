@@ -256,7 +256,10 @@ export default function App() {
         }
 
         const url = `${API_URL}?action=products&ts=${Date.now()}`;
-        const res = await fetchWithTimeout(url, { method: "GET", timeoutMs: 25000 });
+        const res = await fetchWithTimeout(url, {
+          method: "GET",
+          timeoutMs: 25000,
+        });
         const data = await res.json();
 
         if (data?.error) throw new Error(data.error);
@@ -279,7 +282,9 @@ export default function App() {
         if (e?.name === "AbortError" && hasFreshCache) {
           setLoading(false);
           setError("");
-          setLoadingHint("Сервер отвечает медленно. Показан сохранённый ассортимент.");
+          setLoadingHint(
+            "Сервер отвечает медленно. Показан сохранённый ассортимент."
+          );
           return;
         }
 
@@ -297,14 +302,31 @@ export default function App() {
     };
   }, []);
 
+  // ✅ ВАЖНО: "Акции" есть в таблице в category, поэтому исключаем её из Set, а чип вставляем вручную.
   const categories = useMemo(() => {
     const set = new Set<string>();
-    products.forEach((p) => set.add(p.category));
-    return ["Все", ...Array.from(set)];
+
+    products.forEach((p) => {
+      const cat = String(p.category || "").trim();
+      if (!cat) return;
+
+      if (cat.toLowerCase() === "акции") return; // чтобы не было дубля
+      set.add(cat);
+    });
+
+    return ["Акции", "Все", ...Array.from(set)];
   }, [products]);
 
+  // ✅ "Акции" = category строго "Акции"
   const filteredProducts = useMemo(() => {
     if (activeCategory === "Все") return products;
+
+    if (activeCategory === "Акции") {
+      return products.filter(
+        (p) => String(p.category || "").trim().toLowerCase() === "акции"
+      );
+    }
+
     return products.filter((p) => p.category === activeCategory);
   }, [products, activeCategory]);
 
@@ -353,7 +375,8 @@ export default function App() {
   function validateCheckout(): string | null {
     if (customerName.trim().length < 2) return "Укажи имя (минимум 2 символа).";
     if (phone.trim().length < 6) return "Укажи телефон (минимум 6 символов).";
-    if (address.trim().length < 5) return "Укажи адрес доставки (минимум 5 символов).";
+    if (address.trim().length < 5)
+      return "Укажи адрес доставки (минимум 5 символов).";
     if (cartItems.length === 0) return "Корзина пустая.";
     return null;
   }
@@ -452,7 +475,10 @@ export default function App() {
         `&limit=30` +
         `&ts=${Date.now()}`;
 
-      const res = await fetchWithTimeout(url, { method: "GET", timeoutMs: 25000 });
+      const res = await fetchWithTimeout(url, {
+        method: "GET",
+        timeoutMs: 25000,
+      });
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
@@ -471,7 +497,10 @@ export default function App() {
   async function cancelOrderRequest(orderId: string, reason: string) {
     const r = reason.trim();
     if (r.length < 3) {
-      setToast({ type: "error", text: "Укажи причину отмены (минимум 3 символа)." });
+      setToast({
+        type: "error",
+        text: "Укажи причину отмены (минимум 3 символа).",
+      });
       return;
     }
 
@@ -638,11 +667,16 @@ export default function App() {
                       key={c}
                       style={{
                         ...styles.chip,
-                        ...(activeCategory === c ? styles.chipActive : {}),
+                        ...(c === "Акции" ? styles.chipPromo : {}),
+                        ...(activeCategory === c
+                          ? c === "Акции"
+                            ? styles.chipPromoActive
+                            : styles.chipActive
+                          : {}),
                       }}
                       onClick={() => setActiveCategory(c)}
                     >
-                      {c}
+                      {c === "Акции" ? "🔥 Акции" : c}
                     </button>
                   ))}
                 </div>
@@ -992,6 +1026,7 @@ export default function App() {
         )}
       </div>
 
+      {/* ✅ FLOATING CART: показываем сумму БЕЗ доставки */}
       {tab === "catalog" && cartCount > 0 && (
         <button style={styles.floatingCart} onClick={() => setTab("cart")}>
           🛒 {cartCount} • {money(total)} ₽
@@ -1135,10 +1170,12 @@ const styles: Record<string, React.CSSProperties> & {
     boxShadow: "0 10px 22px rgba(42,157,143,0.20)",
   },
 
+  // ✅ chips in multiple rows (wrap)
   chipsRow: {
     display: "flex",
     gap: 10,
-    overflowX: "auto",
+    flexWrap: "wrap",
+    overflowX: "visible",
     paddingBottom: 10,
     marginBottom: 10,
   },
@@ -1157,11 +1194,27 @@ const styles: Record<string, React.CSSProperties> & {
   },
 
   chipActive: {
+    borderColor: "rgba(42,157,143,0.35)",
     background:
       "linear-gradient(180deg, rgba(42,157,143,0.98) 0%, rgba(38,70,83,0.98) 140%)",
     color: "#ffffff",
-    borderColor: "rgba(42,157,143,0.35)",
     boxShadow: "0 10px 22px rgba(42,157,143,0.18)",
+  },
+
+  // ✅ PROMO CHIP STYLES (в твоей палитре)
+  chipPromo: {
+    background: "rgba(244,162,97,0.20)",
+    border: "1px solid rgba(244,162,97,0.65)",
+    color: "#264653",
+    fontWeight: 700,
+  },
+
+  chipPromoActive: {
+    background:
+      "linear-gradient(180deg, rgba(244,162,97,1) 0%, rgba(231,111,81,1) 140%)",
+    color: "#ffffff",
+    borderColor: "rgba(244,162,97,0.35)",
+    boxShadow: "0 10px 22px rgba(244,162,97,0.25)",
   },
 
   info: { padding: 12, fontWeight: 650, color: "#264653" },
@@ -1607,7 +1660,12 @@ const styles: Record<string, React.CSSProperties> & {
     lineHeight: 1,
   },
 
-  qtyNum2: { minWidth: 18, textAlign: "center", fontWeight: 800, color: "#264653" },
+  qtyNum2: {
+    minWidth: 18,
+    textAlign: "center",
+    fontWeight: 800,
+    color: "#264653",
+  },
 
   removeBtn2: {
     width: 34,
@@ -1673,4 +1731,3 @@ const styles: Record<string, React.CSSProperties> & {
     boxShadow: "0 8px 14px rgba(0,0,0,0.12)",
   },
 };
-
