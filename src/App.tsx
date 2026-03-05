@@ -926,7 +926,16 @@ export default function App() {
                 </button>
 
                 <div style={styles.note}>
-                  Оплата пока не принимается в приложении — мы свяжемся после оформления.
+  Перед оформлением заказа рекомендуем ознакомиться с{" "}
+  <a
+    href="https://t.me/c/3048258746/1596/2919"
+    target="_blank"
+    rel="noopener noreferrer"
+    style={{ color: "#2a9d8f", fontWeight: 700, textDecoration: "underline" }}
+  >
+    правилами
+  </a>{" "}
+  в нашей группе.
                 </div>
               </div>
             )}
@@ -1731,6 +1740,7 @@ const styles: Record<string, React.CSSProperties> & {
     boxShadow: "0 8px 14px rgba(0,0,0,0.12)",
   },
 };
+
 
 
 
