@@ -381,7 +381,7 @@ export default function App() {
     const orderId = makeOrderId();
     
     const tgWebApp = (window as any)?.Telegram?.WebApp;
-const tgUser = tg?.initDataUnsafe?.user || null;
+const tgUser = tgWebApp?.initDataUnsafe?.user || null;
 
 const payload = {
   token: API_TOKEN,
@@ -394,15 +394,14 @@ const payload = {
   delivery,
   grandTotal,
   orderId,
-
   tg: tgUser
     ? {
         id: tgUser.id || "",
         username: tgUser.username || "",
         first_name: tgUser.first_name || "",
-        last_name: tgUser.last_name || ""
+        last_name: tgUser.last_name || "",
       }
-    : {}
+    : {},
 };
 
     try {
@@ -1753,5 +1752,6 @@ const styles: Record<string, React.CSSProperties> & {
     boxShadow: "0 8px 14px rgba(0,0,0,0.12)",
   },
 };
+
 
 
