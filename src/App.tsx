@@ -381,26 +381,30 @@ export default function App() {
     const orderId = makeOrderId();
     const tg = getTgUser();
 
-    const payload = {
-      token: API_TOKEN,
-      orderId,
-      tg: tg || {},
-      name: customerName.trim(),
-      phone: phone.trim(),
-      address: address.trim(),
-      comment: comment.trim(),
-      items: cartItems.map((it) => ({
-        id: it.product.id,
-        name: it.product.name,
-        unit: it.product.unit,
-        price: it.product.price,
-        qty: it.qty,
-        sum: it.qty * it.product.price,
-      })),
-      total,
-      delivery,
-      grandTotal,
-    };
+    const tg = (window as any)?.Telegram?.WebApp;
+const tgUser = tg?.initDataUnsafe?.user || null;
+
+const payload = {
+  token: API_TOKEN,
+  name,
+  phone,
+  address,
+  comment,
+  items,
+  total,
+  delivery,
+  grandTotal,
+  orderId,
+
+  tg: tgUser
+    ? {
+        id: tgUser.id || "",
+        username: tgUser.username || "",
+        first_name: tgUser.first_name || "",
+        last_name: tgUser.last_name || ""
+      }
+    : {}
+};
 
     try {
       setSending(true);
@@ -1750,3 +1754,4 @@ const styles: Record<string, React.CSSProperties> & {
     boxShadow: "0 8px 14px rgba(0,0,0,0.12)",
   },
 };
+
