@@ -49,10 +49,8 @@ type Order = {
 type Toast = { type: "error" | "success" | "info"; text: string } | null;
 
 const PRODUCTS_CACHE_KEY = "farm_products_cache_v1";
-const PRODUCTS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 минут
+const PRODUCTS_CACHE_TTL_MS = 60 * 60 * 1000; // 1 час
 const LAST_PHONE_KEY = "farm_last_phone_v1";
-
-// ✅ анти-дубли заказа на клиенте
 const PENDING_ORDER_ID_KEY = "farm_pending_order_id_v1";
 
 const DELIVERY_FEE = 200;
@@ -144,7 +142,7 @@ async function fetchWithTimeout(
   input: RequestInfo,
   init: RequestInit & { timeoutMs?: number } = {}
 ) {
-  const { timeoutMs = 25000, ...rest } = init;
+  const { timeoutMs = 35000, ...rest } = init;
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -197,19 +195,15 @@ export default function App() {
 
   const [sending, setSending] = useState(false);
 
-  // ✅ zoom
   const [zoomSrc, setZoomSrc] = useState<string | null>(null);
 
-  // orders
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState("");
   const [orders, setOrders] = useState<Order[]>([]);
 
-  // ✅ cancel modal
   const [cancelOrderId, setCancelOrderId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState("");
 
-  // Telegram init
   useEffect(() => {
     const w = window as any;
     const tg = w?.Telegram?.WebApp;
@@ -221,20 +215,17 @@ export default function App() {
     }
   }, []);
 
-  // toast auto close
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 2500);
     return () => clearTimeout(t);
   }, [toast]);
 
-  // save phone
   useEffect(() => {
     const p = phone.trim();
     if (p.length >= 6) saveLastPhone(p);
   }, [phone]);
 
-  // load products: cache -> network
   useEffect(() => {
     let cancelled = false;
 
@@ -252,13 +243,14 @@ export default function App() {
         if (hasFreshCache && cached) {
           setProducts(cached.products);
           setLoading(false);
-          setLoadingHint("Обновляем ассортимент…");
+          setLoadingHint("Показан сохранённый ассортимент.");
+          return;
         }
 
-        const url = `${API_URL}?action=products&ts=${Date.now()}`;
+        const url = `${API_URL}?action=products`;
         const res = await fetchWithTimeout(url, {
           method: "GET",
-          timeoutMs: 25000,
+          timeoutMs: 35000,
         });
         const data = await res.json();
 
@@ -279,7 +271,8 @@ export default function App() {
       } catch (e: any) {
         if (cancelled) return;
 
-        if (e?.name === "AbortError" && hasFreshCache) {
+        if (e?.name === "AbortError" && cached) {
+          setProducts(cached.products);
           setLoading(false);
           setError("");
           setLoadingHint(
@@ -302,22 +295,19 @@ export default function App() {
     };
   }, []);
 
-  // ✅ ВАЖНО: "Акции" есть в таблице в category, поэтому исключаем её из Set, а чип вставляем вручную.
   const categories = useMemo(() => {
     const set = new Set<string>();
 
     products.forEach((p) => {
       const cat = String(p.category || "").trim();
       if (!cat) return;
-
-      if (cat.toLowerCase() === "акции") return; // чтобы не было дубля
+      if (cat.toLowerCase() === "акции") return;
       set.add(cat);
     });
 
     return ["Акции", "Все", ...Array.from(set)];
   }, [products]);
 
-  // ✅ "Акции" = category строго "Акции"
   const filteredProducts = useMemo(() => {
     if (activeCategory === "Все") return products;
 
@@ -472,12 +462,11 @@ export default function App() {
         `&token=${encodeURIComponent(API_TOKEN)}` +
         `&tgUserId=${encodeURIComponent(tgUserId)}` +
         `&phone=${encodeURIComponent(phoneDigits)}` +
-        `&limit=30` +
-        `&ts=${Date.now()}`;
+        `&limit=30`;
 
       const res = await fetchWithTimeout(url, {
         method: "GET",
-        timeoutMs: 25000,
+        timeoutMs: 35000,
       });
       const data = await res.json().catch(() => ({}));
 
@@ -493,7 +482,6 @@ export default function App() {
     }
   }
 
-  // ✅ cancel order with reason
   async function cancelOrderRequest(orderId: string, reason: string) {
     const r = reason.trim();
     if (r.length < 3) {
@@ -531,11 +519,13 @@ export default function App() {
       setCancelReason("");
       loadMyOrders();
     } catch (e: any) {
-      setToast({ type: "error", text: e?.message || "Не удалось отменить заказ" });
+      setToast({
+        type: "error",
+        text: e?.message || "Не удалось отменить заказ",
+      });
     }
   }
 
-  // load orders when tab opened
   useEffect(() => {
     if (tab !== "orders") return;
     loadMyOrders();
@@ -560,7 +550,6 @@ export default function App() {
         </div>
       )}
 
-      {/* ✅ ZOOM MODAL */}
       {zoomSrc && (
         <div style={styles.zoomOverlay} onClick={() => setZoomSrc(null)}>
           <div style={styles.zoomBox} onClick={(e) => e.stopPropagation()}>
@@ -572,7 +561,6 @@ export default function App() {
         </div>
       )}
 
-      {/* ✅ CANCEL MODAL */}
       {cancelOrderId && (
         <div style={styles.zoomOverlay} onClick={() => setCancelOrderId(null)}>
           <div style={styles.zoomBox} onClick={(e) => e.stopPropagation()}>
@@ -608,7 +596,6 @@ export default function App() {
       )}
 
       <div style={styles.container}>
-        {/* ===== HEADER ===== */}
         <div style={styles.headerGrid}>
           <div style={styles.headerLeft}>
             <div style={styles.title}>Нашенское</div>
@@ -654,7 +641,9 @@ export default function App() {
           <div style={styles.infoMuted}>{loadingHint}</div>
         )}
         {error && (
-          <div style={{ ...styles.info, color: styles.colors.danger }}>{error}</div>
+          <div style={{ ...styles.info, color: styles.colors.danger }}>
+            {error}
+          </div>
         )}
 
         {!loading && !error && (
@@ -721,7 +710,10 @@ export default function App() {
                           </div>
 
                           {q === 0 ? (
-                            <button style={styles.buyBtn} onClick={() => addToCart(p)}>
+                            <button
+                              style={styles.buyBtn}
+                              onClick={() => addToCart(p)}
+                            >
                               В корзину
                             </button>
                           ) : (
@@ -749,7 +741,6 @@ export default function App() {
               </>
             )}
 
-            {/* ✅ CART (2 columns layout) */}
             {tab === "cart" && (
               <div style={styles.panel}>
                 {cartItems.length === 0 ? (
@@ -821,11 +812,16 @@ export default function App() {
 
                       <div style={styles.totalRowBig}>
                         <div>Итого</div>
-                        <div style={{ fontWeight: 800 }}>{money(grandTotal)} ₽</div>
+                        <div style={{ fontWeight: 800 }}>
+                          {money(grandTotal)} ₽
+                        </div>
                       </div>
                     </div>
 
-                    <button style={styles.primaryBtn} onClick={() => setTab("checkout")}>
+                    <button
+                      style={styles.primaryBtn}
+                      onClick={() => setTab("checkout")}
+                    >
                       Оформить
                     </button>
                   </>
@@ -861,7 +857,8 @@ export default function App() {
                 />
 
                 <label style={styles.label}>
-                  Адрес доставки <span style={{ color: styles.colors.danger }}>*</span>
+                  Адрес доставки{" "}
+                  <span style={{ color: styles.colors.danger }}>*</span>
                 </label>
                 <input
                   style={styles.input}
@@ -901,7 +898,9 @@ export default function App() {
 
                   <div style={styles.totalRowBig}>
                     <div>Итого</div>
-                    <div style={{ fontWeight: 800 }}>{money(grandTotal)} ₽</div>
+                    <div style={{ fontWeight: 800 }}>
+                      {money(grandTotal)} ₽
+                    </div>
                   </div>
                 </div>
 
@@ -926,16 +925,20 @@ export default function App() {
                 </button>
 
                 <div style={styles.note}>
-  Перед оформлением заказа рекомендуем ознакомиться с{" "}
-  <a
-    href="https://t.me/c/3048258746/1596/2919"
-    target="_blank"
-    rel="noopener noreferrer"
-    style={{ color: "#2a9d8f", fontWeight: 700, textDecoration: "underline" }}
-  >
-    правилами
-  </a>{" "}
-  в нашей группе.
+                  Перед оформлением заказа рекомендуем ознакомиться с{" "}
+                  <a
+                    href="https://t.me/c/3048258746/1596/2919"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      color: "#2a9d8f",
+                      fontWeight: 700,
+                      textDecoration: "underline",
+                    }}
+                  >
+                    правилами
+                  </a>{" "}
+                  в нашей группе.
                 </div>
               </div>
             )}
@@ -974,8 +977,12 @@ export default function App() {
                   {orders.map((o, idx) => (
                     <div key={o.orderId || idx} style={styles.orderCard}>
                       <div style={styles.orderTop}>
-                        <div style={styles.orderDate}>{formatDate(o.createdAt)}</div>
-                        <div style={styles.orderStatus}>{humanStatus(o.status)}</div>
+                        <div style={styles.orderDate}>
+                          {formatDate(o.createdAt)}
+                        </div>
+                        <div style={styles.orderStatus}>
+                          {humanStatus(o.status)}
+                        </div>
                       </div>
 
                       <div style={styles.orderTotals}>
@@ -985,11 +992,15 @@ export default function App() {
                         </div>
                         <div style={styles.orderRow}>
                           <div>Доставка</div>
-                          <div style={{ fontWeight: 700 }}>{money(o.delivery)} ₽</div>
+                          <div style={{ fontWeight: 700 }}>
+                            {money(o.delivery)} ₽
+                          </div>
                         </div>
                         <div style={styles.orderRowBig}>
                           <div>Итого</div>
-                          <div style={{ fontWeight: 800 }}>{money(o.grandTotal)} ₽</div>
+                          <div style={{ fontWeight: 800 }}>
+                            {money(o.grandTotal)} ₽
+                          </div>
                         </div>
                       </div>
 
@@ -1007,15 +1018,20 @@ export default function App() {
                                 {it.name}
                               </div>
                               <div style={styles.orderItemQty}>×{it.qty}</div>
-                              <div style={styles.orderItemSum}>{money(it.sum)} ₽</div>
+                              <div style={styles.orderItemSum}>
+                                {money(it.sum)} ₽
+                              </div>
                             </div>
                           ))}
                         {Array.isArray(o.items) && o.items.length > 20 ? (
-                          <div style={styles.infoMuted}>Показаны первые 20 позиций…</div>
+                          <div style={styles.infoMuted}>
+                            Показаны первые 20 позиций…
+                          </div>
                         ) : null}
                       </div>
 
-                      {String(o.status || "").toLowerCase() === "new" && o.orderId ? (
+                      {String(o.status || "").toLowerCase() === "new" &&
+                      o.orderId ? (
                         <button
                           style={styles.cancelBtn}
                           onClick={() => {
@@ -1035,7 +1051,6 @@ export default function App() {
         )}
       </div>
 
-      {/* ✅ FLOATING CART: показываем сумму БЕЗ доставки */}
       {tab === "catalog" && cartCount > 0 && (
         <button style={styles.floatingCart} onClick={() => setTab("cart")}>
           🛒 {cartCount} • {money(total)} ₽
@@ -1179,7 +1194,6 @@ const styles: Record<string, React.CSSProperties> & {
     boxShadow: "0 10px 22px rgba(42,157,143,0.20)",
   },
 
-  // ✅ chips in multiple rows (wrap)
   chipsRow: {
     display: "flex",
     gap: 10,
@@ -1203,14 +1217,13 @@ const styles: Record<string, React.CSSProperties> & {
   },
 
   chipActive: {
-    borderColor: "rgba(42,157,143,0.35)",
     background:
       "linear-gradient(180deg, rgba(42,157,143,0.98) 0%, rgba(38,70,83,0.98) 140%)",
     color: "#ffffff",
+    borderColor: "rgba(42,157,143,0.35)",
     boxShadow: "0 10px 22px rgba(42,157,143,0.18)",
   },
 
-  // ✅ PROMO CHIP STYLES (в твоей палитре)
   chipPromo: {
     background: "rgba(244,162,97,0.20)",
     border: "1px solid rgba(244,162,97,0.65)",
@@ -1290,7 +1303,7 @@ const styles: Record<string, React.CSSProperties> & {
     lineHeight: 1.25,
     fontWeight: 450,
     display: "-webkit-box",
-    WebkitLineClamp: 14,
+    WebkitLineClamp: 5,
     WebkitBoxOrient: "vertical",
     overflow: "hidden",
   },
@@ -1494,7 +1507,6 @@ const styles: Record<string, React.CSSProperties> & {
     boxShadow: "0 16px 32px rgba(38,70,83,0.18)",
   },
 
-  // orders UI
   ordersHeader: {
     display: "flex",
     alignItems: "center",
@@ -1610,7 +1622,6 @@ const styles: Record<string, React.CSSProperties> & {
     padding: "8px 10px",
   },
 
-  // CART 2-column
   cartRow2: {
     display: "grid",
     gridTemplateColumns: "minmax(0, 1fr) 132px",
@@ -1692,7 +1703,6 @@ const styles: Record<string, React.CSSProperties> & {
     boxShadow: "0 8px 14px rgba(231,111,81,0.12)",
   },
 
-  // ZOOM MODAL
   zoomOverlay: {
     position: "fixed",
     inset: 0,
@@ -1740,8 +1750,3 @@ const styles: Record<string, React.CSSProperties> & {
     boxShadow: "0 8px 14px rgba(0,0,0,0.12)",
   },
 };
-
-
-
-
-
