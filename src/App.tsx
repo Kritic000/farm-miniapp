@@ -372,75 +372,84 @@ export default function App() {
   }
 
   async function submitOrder() {
-    const validationError = validateCheckout();
-    if (validationError) {
-      setToast({ type: "error", text: validationError });
-      return;
-    }
-
-    const orderId = makeOrderId();
-    
-    const tgWebApp = (window as any)?.Telegram?.WebApp;
-const tgUser = tgWebApp?.initDataUnsafe?.user || null;
-
-const payload = {
-  token: API_TOKEN,
-  name,
-  phone,
-  address,
-  comment,
-  items,
-  total,
-  delivery,
-  grandTotal,
-  orderId,
-  tg: tgUser
-    ? {
-        id: tgUser.id || "",
-        username: tgUser.username || "",
-        first_name: tgUser.first_name || "",
-        last_name: tgUser.last_name || "",
-      }
-    : {},
-};
-
-    try {
-      setSending(true);
-
-      const res = await fetch(API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
-      if (data?.error) throw new Error(data.error);
-
-      setToast({
-        type: "success",
-        text: data?.duplicate
-          ? "✅ Заказ уже был отправлен (повтор не записан)."
-          : "✅ Заказ отправлен! Мы свяжемся для подтверждения.",
-      });
-
-      clearPendingOrderId();
-
-      setCart({});
-      setAddress("");
-      setComment("");
-      setCustomerName("");
-      setTab("catalog");
-    } catch (e: any) {
-      setToast({
-        type: "error",
-        text: `Не удалось отправить заказ: ${e?.message || "Ошибка"}`,
-      });
-    } finally {
-      setSending(false);
-    }
+  const validationError = validateCheckout();
+  if (validationError) {
+    setToast({ type: "error", text: validationError });
+    return;
   }
+
+  const orderId = makeOrderId();
+
+  const tgWebApp = (window as any)?.Telegram?.WebApp;
+  const tgUser = tgWebApp?.initDataUnsafe?.user || null;
+
+  const items = cartItems.map((it) => ({
+    id: it.product.id,
+    name: it.product.name,
+    unit: it.product.unit,
+    price: it.product.price,
+    qty: it.qty,
+    sum: it.qty * it.product.price,
+  }));
+
+  const payload = {
+    token: API_TOKEN,
+    name: customerName,
+    phone,
+    address,
+    comment,
+    items,
+    total,
+    delivery,
+    grandTotal,
+    orderId,
+    tg: tgUser
+      ? {
+          id: tgUser.id || "",
+          username: tgUser.username || "",
+          first_name: tgUser.first_name || "",
+          last_name: tgUser.last_name || "",
+        }
+      : {},
+  };
+
+  try {
+    setSending(true);
+
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+    if (data?.error) throw new Error(data.error);
+
+    setToast({
+      type: "success",
+      text: data?.duplicate
+        ? "✅ Заказ уже был отправлен (повтор не записан)."
+        : "✅ Заказ отправлен! Мы свяжемся для подтверждения.",
+    });
+
+    clearPendingOrderId();
+
+    setCart({});
+    setAddress("");
+    setComment("");
+    setCustomerName("");
+    setTab("catalog");
+  } catch (e: any) {
+    setToast({
+      type: "error",
+      text: `Не удалось отправить заказ: ${e?.message || "Ошибка"}`,
+    });
+  } finally {
+    setSending(false);
+  }
+}
 
   async function loadMyOrders() {
     const tg = getTgUser();
@@ -1752,6 +1761,7 @@ const styles: Record<string, React.CSSProperties> & {
     boxShadow: "0 8px 14px rgba(0,0,0,0.12)",
   },
 };
+
 
 
 
