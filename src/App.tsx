@@ -379,9 +379,8 @@ export default function App() {
     }
 
     const orderId = makeOrderId();
-    const tg = getTgUser();
-
-    const tg = (window as any)?.Telegram?.WebApp;
+    
+    const tgWebApp = (window as any)?.Telegram?.WebApp;
 const tgUser = tg?.initDataUnsafe?.user || null;
 
 const payload = {
@@ -1754,4 +1753,5 @@ const styles: Record<string, React.CSSProperties> & {
     boxShadow: "0 8px 14px rgba(0,0,0,0.12)",
   },
 };
+
 
