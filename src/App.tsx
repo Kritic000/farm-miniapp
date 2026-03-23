@@ -48,8 +48,8 @@ type Order = {
 
 type Toast = { type: "error" | "success" | "info"; text: string } | null;
 
-const PRODUCTS_CACHE_KEY = "farm_products_cache_v1";
-const PRODUCTS_CACHE_TTL_MS = 60 * 60 * 1000; // 1 час
+const PRODUCTS_CACHE_KEY = "farm_products_cache_v2";
+const PRODUCTS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 минут
 const LAST_PHONE_KEY = "farm_last_phone_v1";
 const PENDING_ORDER_ID_KEY = "farm_pending_order_id_v1";
 
@@ -243,17 +243,17 @@ export default function App() {
         if (hasFreshCache && cached) {
           setProducts(cached.products);
           setLoading(false);
-          setLoadingHint("Показан сохранённый ассортимент.");
-          return;
+          setLoadingHint("Показан сохранённый ассортимент. Обновляем данные…");
         }
 
-        const url = `${API_URL}?action=products`;
+        const url = `${API_URL}?action=products&nocache=1&t=${Date.now()}`;
         const res = await fetchWithTimeout(url, {
           method: "GET",
           timeoutMs: 35000,
         });
         const data = await res.json();
 
+        if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
         if (data?.error) throw new Error(data.error);
 
         const list: Product[] = (data.products || []).map((p: Product) => ({
@@ -267,23 +267,26 @@ export default function App() {
         saveProductsCache(list);
 
         setLoading(false);
-        setLoadingHint("");
+        setError("");
+        setLoadingHint(hasFreshCache ? "Ассортимент обновлён." : "");
       } catch (e: any) {
         if (cancelled) return;
 
-        if (e?.name === "AbortError" && cached) {
+        if (cached) {
           setProducts(cached.products);
           setLoading(false);
           setError("");
           setLoadingHint(
-            "Сервер отвечает медленно. Показан сохранённый ассортимент."
+            "Не удалось получить свежие данные. Показан сохранённый ассортимент."
           );
           return;
         }
 
-        if (e?.name === "AbortError")
+        if (e?.name === "AbortError") {
           setError("Сервер долго отвечает. Попробуйте ещё раз.");
-        else setError(e?.message || "Ошибка загрузки товаров");
+        } else {
+          setError(e?.message || "Ошибка загрузки товаров");
+        }
 
         setLoading(false);
         setLoadingHint("");
@@ -307,6 +310,12 @@ export default function App() {
 
     return ["Акции", "Все", ...Array.from(set)];
   }, [products]);
+
+  useEffect(() => {
+    if (!categories.includes(activeCategory)) {
+      setActiveCategory("Все");
+    }
+  }, [categories, activeCategory]);
 
   const filteredProducts = useMemo(() => {
     if (activeCategory === "Все") return products;
