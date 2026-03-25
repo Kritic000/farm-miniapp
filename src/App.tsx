@@ -58,6 +58,7 @@ const PRODUCTS_CACHE_KEY = "farm_products_cache_v2";
 const PRODUCTS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 минут
 const LAST_PHONE_KEY = "farm_last_phone_v1";
 const PENDING_ORDER_ID_KEY = "farm_pending_order_id_v1";
+const VISIT_SOURCE_KEY = "farm_visit_source_v1";
 
 const DELIVERY_FEE = 200;
 const FREE_DELIVERY_FROM = 2000;
@@ -178,26 +179,79 @@ function clearPendingOrderId() {
   } catch {}
 }
 
-function trackOrderCreated() {
+function detectSource() {
   try {
     const params = new URLSearchParams(window.location.search);
-    const source = params.get("utm_source") || "direct";
-    const medium = params.get("utm_medium") || "";
-    const campaign = params.get("utm_campaign") || "";
+    const utmSource = (params.get("utm_source") || "").trim().toLowerCase();
+    if (utmSource) {
+      if (utmSource === "tg") return "telegram";
+      return utmSource;
+    }
+
+    const path = window.location.pathname.toLowerCase();
+
+    if (path === "/tg" || path.startsWith("/tg/")) return "telegram";
+    if (path === "/vk" || path.startsWith("/vk/")) return "vk";
+    if (path === "/max" || path.startsWith("/max/")) return "max";
+
+    return "direct";
+  } catch {
+    return "direct";
+  }
+}
+
+function getVisitSource() {
+  try {
+    const stored = (sessionStorage.getItem(VISIT_SOURCE_KEY) || "").trim();
+    if (stored) return stored;
+  } catch {}
+
+  return detectSource();
+}
+
+function saveVisitSource(source: string) {
+  try {
+    sessionStorage.setItem(VISIT_SOURCE_KEY, source);
+  } catch {}
+}
+
+function trackVisitSource() {
+  try {
+    const source = detectSource();
+    saveVisitSource(source);
+
+    if (typeof window.ym === "function") {
+      window.ym(METRIKA_ID, "params", {
+        app_source: source,
+      });
+    }
+
+    console.log("Metrika visit source sent:", {
+      app_source: source,
+      path: window.location.pathname,
+    });
+  } catch (err) {
+    console.error("Metrika visit params error:", err);
+  }
+}
+
+function trackOrderCreated() {
+  try {
+    const source = getVisitSource();
 
     if (typeof window.ym === "function") {
       window.ym(METRIKA_ID, "reachGoal", "order_created", {
         source,
-        medium,
-        campaign,
+        medium: "social",
+        campaign: "orders",
       });
     }
 
     console.log("Metrika goal sent:", {
       goal: "order_created",
       source,
-      medium,
-      campaign,
+      medium: "social",
+      campaign: "orders",
     });
   } catch (err) {
     console.error("Metrika track error:", err);
@@ -246,6 +300,8 @@ export default function App() {
         tg.expand();
       } catch {}
     }
+
+    trackVisitSource();
   }, []);
 
   useEffect(() => {
@@ -469,7 +525,9 @@ export default function App() {
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
       if (data?.error) throw new Error(data.error);
 
-      trackOrderCreated();
+      if (!data?.duplicate) {
+        trackOrderCreated();
+      }
 
       setToast({
         type: "success",
