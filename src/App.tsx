@@ -55,7 +55,7 @@ type Order = {
 type Toast = { type: "error" | "success" | "info"; text: string } | null;
 
 const PRODUCTS_CACHE_KEY = "farm_products_cache_v2";
-const PRODUCTS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 минут
+const PRODUCTS_CACHE_TTL_MS = 5 * 60 * 1000;
 const LAST_PHONE_KEY = "farm_last_phone_v1";
 const PENDING_ORDER_ID_KEY = "farm_pending_order_id_v1";
 const VISIT_SOURCE_KEY = "farm_visit_source_v1";
@@ -183,6 +183,7 @@ function detectSource() {
   try {
     const params = new URLSearchParams(window.location.search);
     const utmSource = (params.get("utm_source") || "").trim().toLowerCase();
+
     if (utmSource) {
       if (utmSource === "tg") return "telegram";
       return utmSource;
@@ -221,17 +222,17 @@ function trackVisitSource() {
     saveVisitSource(source);
 
     if (typeof window.ym === "function") {
-      window.ym(METRIKA_ID, "params", {
+      window.ym(METRIKA_ID, "userParams", {
         app_source: source,
       });
     }
 
-    console.log("Metrika visit source sent:", {
+    console.log("Metrika USER PARAM sent:", {
       app_source: source,
       path: window.location.pathname,
     });
   } catch (err) {
-    console.error("Metrika visit params error:", err);
+    console.error("Metrika userParams error:", err);
   }
 }
 
@@ -294,6 +295,7 @@ export default function App() {
   useEffect(() => {
     const w = window as any;
     const tg = w?.Telegram?.WebApp;
+
     if (tg) {
       try {
         tg.ready();
@@ -301,7 +303,11 @@ export default function App() {
       } catch {}
     }
 
-    trackVisitSource();
+    const t = setTimeout(() => {
+      trackVisitSource();
+    }, 500);
+
+    return () => clearTimeout(t);
   }, []);
 
   useEffect(() => {
@@ -575,7 +581,7 @@ export default function App() {
         `&token=${encodeURIComponent(API_TOKEN)}` +
         `&tgUserId=${encodeURIComponent(tgUserId)}` +
         `&phone=${encodeURIComponent(phoneDigits)}` +
-        `&limit=30`;
+        `&limit=${encodeURIComponent("30")}`;
 
       const res = await fetchWithTimeout(url, {
         method: "GET",
