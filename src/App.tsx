@@ -1,6 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { API_URL } from "./config";
 
+declare global {
+  interface Window {
+    ym?: (...args: any[]) => void;
+  }
+}
+
 type Product = {
   id: string;
   category: string;
@@ -55,6 +61,7 @@ const PENDING_ORDER_ID_KEY = "farm_pending_order_id_v1";
 
 const DELIVERY_FEE = 200;
 const FREE_DELIVERY_FROM = 2000;
+const METRIKA_ID = 108236605;
 
 function getTgUser(): TgUser | null {
   const w = window as any;
@@ -169,6 +176,32 @@ function clearPendingOrderId() {
   try {
     sessionStorage.removeItem(PENDING_ORDER_ID_KEY);
   } catch {}
+}
+
+function trackOrderCreated() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const source = params.get("utm_source") || "direct";
+    const medium = params.get("utm_medium") || "";
+    const campaign = params.get("utm_campaign") || "";
+
+    if (typeof window.ym === "function") {
+      window.ym(METRIKA_ID, "reachGoal", "order_created", {
+        source,
+        medium,
+        campaign,
+      });
+    }
+
+    console.log("Metrika goal sent:", {
+      goal: "order_created",
+      source,
+      medium,
+      campaign,
+    });
+  } catch (err) {
+    console.error("Metrika track error:", err);
+  }
 }
 
 export default function App() {
@@ -381,84 +414,86 @@ export default function App() {
   }
 
   async function submitOrder() {
-  const validationError = validateCheckout();
-  if (validationError) {
-    setToast({ type: "error", text: validationError });
-    return;
+    const validationError = validateCheckout();
+    if (validationError) {
+      setToast({ type: "error", text: validationError });
+      return;
+    }
+
+    const orderId = makeOrderId();
+
+    const tgWebApp = (window as any)?.Telegram?.WebApp;
+    const tgUser = tgWebApp?.initDataUnsafe?.user || null;
+
+    const items = cartItems.map((it) => ({
+      id: it.product.id,
+      name: it.product.name,
+      unit: it.product.unit,
+      price: it.product.price,
+      qty: it.qty,
+      sum: it.qty * it.product.price,
+    }));
+
+    const payload = {
+      token: API_TOKEN,
+      name: customerName,
+      phone,
+      address,
+      comment,
+      items,
+      total,
+      delivery,
+      grandTotal,
+      orderId,
+      tg: tgUser
+        ? {
+            id: tgUser.id || "",
+            username: tgUser.username || "",
+            first_name: tgUser.first_name || "",
+            last_name: tgUser.last_name || "",
+          }
+        : {},
+    };
+
+    try {
+      setSending(true);
+
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+      if (data?.error) throw new Error(data.error);
+
+      trackOrderCreated();
+
+      setToast({
+        type: "success",
+        text: data?.duplicate
+          ? "✅ Заказ уже был отправлен (повтор не записан)."
+          : "✅ Заказ отправлен! Мы свяжемся для подтверждения.",
+      });
+
+      clearPendingOrderId();
+
+      setCart({});
+      setAddress("");
+      setComment("");
+      setCustomerName("");
+      setTab("catalog");
+    } catch (e: any) {
+      setToast({
+        type: "error",
+        text: `Не удалось отправить заказ: ${e?.message || "Ошибка"}`,
+      });
+    } finally {
+      setSending(false);
+    }
   }
-
-  const orderId = makeOrderId();
-
-  const tgWebApp = (window as any)?.Telegram?.WebApp;
-  const tgUser = tgWebApp?.initDataUnsafe?.user || null;
-
-  const items = cartItems.map((it) => ({
-    id: it.product.id,
-    name: it.product.name,
-    unit: it.product.unit,
-    price: it.product.price,
-    qty: it.qty,
-    sum: it.qty * it.product.price,
-  }));
-
-  const payload = {
-    token: API_TOKEN,
-    name: customerName,
-    phone,
-    address,
-    comment,
-    items,
-    total,
-    delivery,
-    grandTotal,
-    orderId,
-    tg: tgUser
-      ? {
-          id: tgUser.id || "",
-          username: tgUser.username || "",
-          first_name: tgUser.first_name || "",
-          last_name: tgUser.last_name || "",
-        }
-      : {},
-  };
-
-  try {
-    setSending(true);
-
-    const res = await fetch(API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify(payload),
-    });
-
-    const data = await res.json().catch(() => ({}));
-
-    if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
-    if (data?.error) throw new Error(data.error);
-
-    setToast({
-      type: "success",
-      text: data?.duplicate
-        ? "✅ Заказ уже был отправлен (повтор не записан)."
-        : "✅ Заказ отправлен! Мы свяжемся для подтверждения.",
-    });
-
-    clearPendingOrderId();
-
-    setCart({});
-    setAddress("");
-    setComment("");
-    setCustomerName("");
-    setTab("catalog");
-  } catch (e: any) {
-    setToast({
-      type: "error",
-      text: `Не удалось отправить заказ: ${e?.message || "Ошибка"}`,
-    });
-  } finally {
-    setSending(false);
-  }
-}
 
   async function loadMyOrders() {
     const tg = getTgUser();
@@ -1770,6 +1805,3 @@ const styles: Record<string, React.CSSProperties> & {
     boxShadow: "0 8px 14px rgba(0,0,0,0.12)",
   },
 };
-
-
-
