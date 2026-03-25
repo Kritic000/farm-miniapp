@@ -1,4 +1,22 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "npm run build",
-  "outputDirectory": "dist"
+  "outputDirectory": "dist",
+  "redirects": [
+    {
+      "source": "/tg",
+      "destination": "/?utm_source=telegram&utm_medium=social&utm_campaign=orders",
+      "permanent": false
+    },
+    {
+      "source": "/vk",
+      "destination": "/?utm_source=vk&utm_medium=social&utm_campaign=orders",
+      "permanent": false
+    },
+    {
+      "source": "/max",
+      "destination": "/?utm_source=max&utm_medium=social&utm_campaign=orders",
+      "permanent": false
+    }
+  ]
 }
