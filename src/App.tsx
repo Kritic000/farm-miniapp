@@ -216,23 +216,53 @@ function saveVisitSource(source: string) {
   } catch {}
 }
 
+function ensureUtmForSource(source: string) {
+  try {
+    if (!source || source === "direct") return;
+
+    const url = new URL(window.location.href);
+    let changed = false;
+
+    if (!url.searchParams.get("utm_source")) {
+      url.searchParams.set("utm_source", source);
+      changed = true;
+    }
+    if (!url.searchParams.get("utm_medium")) {
+      url.searchParams.set("utm_medium", "social");
+      changed = true;
+    }
+    if (!url.searchParams.get("utm_campaign")) {
+      url.searchParams.set("utm_campaign", "orders");
+      changed = true;
+    }
+
+    if (changed) {
+      window.history.replaceState({}, "", url.toString());
+    }
+  } catch (err) {
+    console.error("ensureUtmForSource error:", err);
+  }
+}
+
 function trackVisitSource() {
   try {
     const source = detectSource();
     saveVisitSource(source);
+    ensureUtmForSource(source);
 
     if (typeof window.ym === "function") {
-      window.ym(METRIKA_ID, "userParams", {
+      window.ym(METRIKA_ID, "params", {
         app_source: source,
       });
     }
 
-    console.log("Metrika USER PARAM sent:", {
+    console.log("Metrika visit source sent:", {
       app_source: source,
       path: window.location.pathname,
+      search: window.location.search,
     });
   } catch (err) {
-    console.error("Metrika userParams error:", err);
+    console.error("Metrika visit params error:", err);
   }
 }
 
@@ -1819,53 +1849,4 @@ const styles: Record<string, React.CSSProperties> & {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    boxShadow: "0 8px 14px rgba(231,111,81,0.12)",
-  },
-
-  zoomOverlay: {
-    position: "fixed",
-    inset: 0,
-    zIndex: 10000,
-    background: "rgba(0,0,0,0.55)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 16,
-  },
-
-  zoomBox: {
-    position: "relative",
-    width: "min(520px, 100%)",
-    maxHeight: "85vh",
-    background: "rgba(255,255,255,0.92)",
-    borderRadius: 18,
-    padding: 10,
-    boxShadow: "0 18px 40px rgba(0,0,0,0.35)",
-    overflow: "hidden",
-  },
-
-  zoomImg: {
-    width: "100%",
-    height: "auto",
-    maxHeight: "80vh",
-    objectFit: "contain",
-    borderRadius: 14,
-    display: "block",
-  },
-
-  zoomClose: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    border: "1px solid rgba(38,70,83,0.16)",
-    background: "rgba(255,255,255,0.85)",
-    cursor: "pointer",
-    fontSize: 22,
-    lineHeight: 1,
-    color: "#264653",
-    boxShadow: "0 8px 14px rgba(0,0,0,0.12)",
-  },
-};
+    boxShadow: "0 8px 14px rgba(231,111
