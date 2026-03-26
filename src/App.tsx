@@ -68,7 +68,6 @@ function getTelegramWebApp() {
   try {
     const tg = window.Telegram?.WebApp;
     if (!tg) return null;
-    if (!tg.initDataUnsafe) return null;
     return tg;
   } catch {
     return null;
@@ -76,8 +75,12 @@ function getTelegramWebApp() {
 }
 
 function getTgUser(): TgUser | null {
-  const tg = getTelegramWebApp();
-  return tg?.initDataUnsafe?.user || null;
+  try {
+    const tg = getTelegramWebApp();
+    return tg?.initDataUnsafe?.user || null;
+  } catch {
+    return null;
+  }
 }
 
 function money(n: number) {
@@ -189,30 +192,42 @@ function clearPendingOrderId() {
   } catch {}
 }
 
-function detectSource() {
+function getUtmData() {
   try {
     const params = new URLSearchParams(window.location.search);
-    const utmSource = (params.get("utm_source") || "").trim().toLowerCase();
-    if (utmSource) return utmSource;
-
-    return "direct";
+    return {
+      utmSource: (params.get("utm_source") || "").trim(),
+      utmMedium: (params.get("utm_medium") || "").trim(),
+      utmCampaign: (params.get("utm_campaign") || "").trim(),
+    };
   } catch {
-    return "direct";
+    return {
+      utmSource: "",
+      utmMedium: "",
+      utmCampaign: "",
+    };
   }
+}
+
+function detectSource() {
+  const { utmSource } = getUtmData();
+  if (utmSource) return utmSource.toLowerCase();
+  return "direct";
 }
 
 function trackVisitSource() {
   try {
     const source = detectSource();
+    const ymReady = typeof window.ym === "function";
 
-    if (typeof window.ym === "function") {
+    if (ymReady) {
       window.ym(METRIKA_ID, "hit", window.location.href);
-      window.ym(METRIKA_ID, "reachGoal", "visit_source", { source });
     }
 
     console.log("Metrika visit sent:", {
       source,
       url: window.location.href,
+      ymReady,
     });
   } catch (err) {
     console.error("Metrika visit error:", err);
@@ -222,8 +237,9 @@ function trackVisitSource() {
 function trackOrderCreated() {
   try {
     const source = detectSource();
+    const ymReady = typeof window.ym === "function";
 
-    if (typeof window.ym === "function") {
+    if (ymReady) {
       window.ym(METRIKA_ID, "reachGoal", "order_created", {
         source,
         medium: "social",
@@ -236,6 +252,7 @@ function trackOrderCreated() {
       source,
       medium: "social",
       campaign: "orders",
+      ymReady,
     });
   } catch (err) {
     console.error("Metrika track error:", err);
@@ -278,7 +295,7 @@ export default function App() {
   useEffect(() => {
     const tg = getTelegramWebApp();
 
-    if (tg) {
+    if (tg?.initDataUnsafe) {
       try {
         tg.ready();
         tg.expand();
@@ -466,6 +483,7 @@ export default function App() {
 
     const orderId = makeOrderId();
     const tgUser = getTgUser();
+    const { utmSource, utmMedium, utmCampaign } = getUtmData();
 
     const items = cartItems.map((it) => ({
       id: it.product.id,
@@ -487,6 +505,9 @@ export default function App() {
       delivery,
       grandTotal,
       orderId,
+      utmSource,
+      utmMedium,
+      utmCampaign,
       tg: tgUser
         ? {
             id: tgUser.id || "",
@@ -523,7 +544,6 @@ export default function App() {
       });
 
       clearPendingOrderId();
-
       setCart({});
       setAddress("");
       setComment("");
@@ -734,7 +754,7 @@ export default function App() {
 
         {!getTelegramWebApp() && (
           <div style={styles.infoMuted}>
-            Обычная веб-версия сайта. Заказы и история заказов работают по номеру телефона.
+            Обычная веб-версия сайта. История заказов работает по номеру телефона.
           </div>
         )}
 
