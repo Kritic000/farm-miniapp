@@ -4,6 +4,7 @@ import { API_URL } from "./config";
 declare global {
   interface Window {
     ym?: (...args: any[]) => void;
+    Telegram?: any;
   }
 }
 
@@ -58,17 +59,25 @@ const PRODUCTS_CACHE_KEY = "farm_products_cache_v2";
 const PRODUCTS_CACHE_TTL_MS = 5 * 60 * 1000;
 const LAST_PHONE_KEY = "farm_last_phone_v1";
 const PENDING_ORDER_ID_KEY = "farm_pending_order_id_v1";
-const VISIT_SOURCE_KEY = "farm_visit_source_v1";
 
 const DELIVERY_FEE = 200;
 const FREE_DELIVERY_FROM = 2000;
 const METRIKA_ID = 108236605;
 
+function getTelegramWebApp() {
+  try {
+    const tg = window.Telegram?.WebApp;
+    if (!tg) return null;
+    if (!tg.initDataUnsafe) return null;
+    return tg;
+  } catch {
+    return null;
+  }
+}
+
 function getTgUser(): TgUser | null {
-  const w = window as any;
-  const tg = w?.Telegram?.WebApp;
-  const u = tg?.initDataUnsafe?.user;
-  return u || null;
+  const tg = getTelegramWebApp();
+  return tg?.initDataUnsafe?.user || null;
 }
 
 function money(n: number) {
@@ -76,7 +85,7 @@ function money(n: number) {
 }
 
 function normalizePhone(p: string) {
-  return (p || "").replace(/\D+/g, "");
+  return String(p || "").replace(/\D+/g, "");
 }
 
 function formatDate(iso: string) {
@@ -153,6 +162,7 @@ async function fetchWithTimeout(
   const { timeoutMs = 35000, ...rest } = init;
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
     const res = await fetch(input, { ...rest, signal: controller.signal });
     return res;
@@ -183,17 +193,7 @@ function detectSource() {
   try {
     const params = new URLSearchParams(window.location.search);
     const utmSource = (params.get("utm_source") || "").trim().toLowerCase();
-
-    if (utmSource) {
-      if (utmSource === "tg") return "telegram";
-      return utmSource;
-    }
-
-    const path = window.location.pathname.toLowerCase();
-
-    if (path === "/tg" || path.startsWith("/tg/")) return "telegram";
-    if (path === "/vk" || path.startsWith("/vk/")) return "vk";
-    if (path === "/max" || path.startsWith("/max/")) return "max";
+    if (utmSource) return utmSource;
 
     return "direct";
   } catch {
@@ -201,44 +201,27 @@ function detectSource() {
   }
 }
 
-function getVisitSource() {
-  try {
-    const stored = (sessionStorage.getItem(VISIT_SOURCE_KEY) || "").trim();
-    if (stored) return stored;
-  } catch {}
-
-  return detectSource();
-}
-
-function saveVisitSource(source: string) {
-  try {
-    sessionStorage.setItem(VISIT_SOURCE_KEY, source);
-  } catch {}
-}
-
 function trackVisitSource() {
   try {
     const source = detectSource();
-    saveVisitSource(source);
 
     if (typeof window.ym === "function") {
-      window.ym(METRIKA_ID, "userParams", {
-        app_source: source,
-      });
+      window.ym(METRIKA_ID, "hit", window.location.href);
+      window.ym(METRIKA_ID, "reachGoal", "visit_source", { source });
     }
 
-    console.log("Metrika USER PARAM sent:", {
-      app_source: source,
-      path: window.location.pathname,
+    console.log("Metrika visit sent:", {
+      source,
+      url: window.location.href,
     });
   } catch (err) {
-    console.error("Metrika userParams error:", err);
+    console.error("Metrika visit error:", err);
   }
 }
 
 function trackOrderCreated() {
   try {
-    const source = getVisitSource();
+    const source = detectSource();
 
     if (typeof window.ym === "function") {
       window.ym(METRIKA_ID, "reachGoal", "order_created", {
@@ -293,8 +276,7 @@ export default function App() {
   const [cancelReason, setCancelReason] = useState("");
 
   useEffect(() => {
-    const w = window as any;
-    const tg = w?.Telegram?.WebApp;
+    const tg = getTelegramWebApp();
 
     if (tg) {
       try {
@@ -305,7 +287,7 @@ export default function App() {
 
     const t = setTimeout(() => {
       trackVisitSource();
-    }, 500);
+    }, 700);
 
     return () => clearTimeout(t);
   }, []);
@@ -483,9 +465,7 @@ export default function App() {
     }
 
     const orderId = makeOrderId();
-
-    const tgWebApp = (window as any)?.Telegram?.WebApp;
-    const tgUser = tgWebApp?.initDataUnsafe?.user || null;
+    const tgUser = getTgUser();
 
     const items = cartItems.map((it) => ({
       id: it.product.id,
@@ -564,11 +544,9 @@ export default function App() {
     const tgUserId = tg?.id ? String(tg.id) : "";
     const phoneDigits = normalizePhone(phone);
 
-    if (!tgUserId && phoneDigits.length < 6) {
+    if (phoneDigits.length < 6 && !tgUserId) {
       setOrders([]);
-      setOrdersError(
-        "Чтобы показать заказы, открой приложение из Telegram или укажи телефон (в оформлении)."
-      );
+      setOrdersError("Укажи телефон, чтобы показать твои заказы.");
       return;
     }
 
@@ -581,7 +559,7 @@ export default function App() {
         `&token=${encodeURIComponent(API_TOKEN)}` +
         `&tgUserId=${encodeURIComponent(tgUserId)}` +
         `&phone=${encodeURIComponent(phoneDigits)}` +
-        `&limit=${encodeURIComponent("30")}`;
+        `&limit=30`;
 
       const res = await fetchWithTimeout(url, {
         method: "GET",
@@ -648,7 +626,6 @@ export default function App() {
   useEffect(() => {
     if (tab !== "orders") return;
     loadMyOrders();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
   return (
@@ -754,6 +731,12 @@ export default function App() {
             </button>
           </div>
         </div>
+
+        {!getTelegramWebApp() && (
+          <div style={styles.infoMuted}>
+            Обычная веб-версия сайта. Заказы и история заказов работают по номеру телефона.
+          </div>
+        )}
 
         {loading && <div style={styles.info}>Загрузка ассортимента…</div>}
         {!loading && loadingHint && (
@@ -1042,23 +1025,6 @@ export default function App() {
                 >
                   Назад в корзину
                 </button>
-
-                <div style={styles.note}>
-                  Перед оформлением заказа рекомендуем ознакомиться с{" "}
-                  <a
-                    href="https://t.me/c/3048258746/1596/2919"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      color: "#2a9d8f",
-                      fontWeight: 700,
-                      textDecoration: "underline",
-                    }}
-                  >
-                    правилами
-                  </a>{" "}
-                  в нашей группе.
-                </div>
               </div>
             )}
 
@@ -1075,6 +1041,12 @@ export default function App() {
                     {ordersLoading ? "Обновляем…" : "↻"}
                   </button>
                 </div>
+
+                {!getTelegramWebApp() && (
+                  <div style={styles.infoMuted}>
+                    Для поиска заказов укажи тот же телефон, что был в оформлении.
+                  </div>
+                )}
 
                 {ordersError ? (
                   <div style={{ ...styles.info, color: styles.colors.danger }}>
@@ -1597,13 +1569,6 @@ const styles: Record<string, React.CSSProperties> & {
     cursor: "pointer",
     boxShadow: "0 10px 22px rgba(244,162,97,0.14)",
     boxSizing: "border-box",
-  },
-
-  note: {
-    marginTop: 10,
-    fontSize: 12,
-    color: "rgba(38,70,83,0.80)",
-    fontWeight: 450,
   },
 
   floatingCart: {
