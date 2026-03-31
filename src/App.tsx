@@ -951,15 +951,16 @@ export default function App() {
       )}
 
       {tab === "catalog" && cartCount > 0 && (
-        <button
-          style={styles.floatingCartBtn}
-          onClick={() => setTab("cart")}
-          aria-label="Открыть корзину"
-        >
-          <span style={styles.floatingCartIcon}>🛒</span>
-          <span style={styles.floatingCartCount}>{cartCount}</span>
-        </button>
-      )}
+  <button
+    style={styles.floatingCartBtn}
+    onClick={() => setTab("cart")}
+    aria-label="Открыть корзину"
+  >
+    <span style={styles.floatingCartIcon}>🛒</span>
+    <span style={styles.floatingCartText}>Корзина</span>
+    <span style={styles.floatingCartCount}>{cartCount}</span>
+  </button>
+)}
 
       <div style={styles.container}>
         <div style={styles.headerGrid}>
@@ -2016,44 +2017,53 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   floatingCartBtn: {
-    position: "fixed",
-    right: 16,
-    bottom: 20,
-    zIndex: 2600,
-    border: "none",
-    background: "#8a5a36",
-    color: "#fff",
-    width: 62,
-    height: 62,
-    borderRadius: "999px",
-    boxShadow: "0 10px 26px rgba(0,0,0,0.22)",
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  position: "fixed",
+  left: 16,
+  bottom: 20,
+  zIndex: 2600,
+  border: "2px solid #ffffff",
+  background: "linear-gradient(135deg, #8a5a36 0%, #a56a3f 100%)",
+  color: "#fff",
+  minWidth: 132,
+  height: 56,
+  borderRadius: 999,
+  boxShadow: "0 12px 28px rgba(0,0,0,0.24)",
+  cursor: "pointer",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 8,
+  padding: "0 16px",
+},
 
-  floatingCartIcon: {
-    fontSize: 24,
-    lineHeight: 1,
-  },
+floatingCartIcon: {
+  fontSize: 20,
+  lineHeight: 1,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+},
 
-  floatingCartCount: {
-    position: "absolute",
-    top: -4,
-    right: -2,
-    minWidth: 24,
-    height: 24,
-    borderRadius: 999,
-    background: "#d56d1f",
-    color: "#fff",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 12,
-    fontWeight: 900,
-    padding: "0 6px",
-    boxSizing: "border-box",
-    border: "2px solid #f7f4ef",
+floatingCartText: {
+  fontSize: 15,
+  fontWeight: 800,
+  lineHeight: 1,
+  whiteSpace: "nowrap",
+},
+
+floatingCartCount: {
+  minWidth: 24,
+  height: 24,
+  borderRadius: 999,
+  background: "#ffffff",
+  color: "#8a5a36",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontSize: 12,
+  fontWeight: 900,
+  padding: "0 7px",
+  boxSizing: "border-box",
+  boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
   },
 };
