@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { API_URL } from "./config";
+import { API_PRODUCTS_URL, API_ORDER_URL, API_ORDERS_URL, API_CANCEL_URL } from "./config";
 
 declare global {
   interface Window {
@@ -260,8 +260,6 @@ function trackOrderCreated() {
 }
 
 export default function App() {
-  const API_TOKEN = "Kjhytccb18@";
-
   const [loading, setLoading] = useState(true);
   const [loadingHint, setLoadingHint] = useState<string>("");
   const [error, setError] = useState<string>("");
@@ -340,7 +338,7 @@ export default function App() {
           setLoadingHint("Показан сохранённый ассортимент. Обновляем данные…");
         }
 
-        const url = `${API_URL}?action=products&nocache=1&t=${Date.now()}`;
+        const url = `${API_PRODUCTS_URL}?nocache=1&t=${Date.now()}`;
         const res = await fetchWithTimeout(url, {
           method: "GET",
           timeoutMs: 35000,
@@ -495,7 +493,6 @@ export default function App() {
     }));
 
     const payload = {
-      token: API_TOKEN,
       name: customerName,
       phone,
       address,
@@ -521,7 +518,7 @@ export default function App() {
     try {
       setSending(true);
 
-      const res = await fetch(API_URL, {
+      const res = await fetch(API_ORDER_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify(payload),
@@ -575,9 +572,8 @@ export default function App() {
       setOrdersError("");
 
       const url =
-        `${API_URL}?action=orders` +
-        `&token=${encodeURIComponent(API_TOKEN)}` +
-        `&tgUserId=${encodeURIComponent(tgUserId)}` +
+        `${API_ORDERS_URL}` +
+        `?tgUserId=${encodeURIComponent(tgUserId)}` +
         `&phone=${encodeURIComponent(phoneDigits)}` +
         `&limit=30`;
 
@@ -614,12 +610,10 @@ export default function App() {
     const phoneDigits = normalizePhone(phone);
 
     try {
-      const res = await fetch(API_URL, {
+      const res = await fetch(API_CANCEL_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({
-          token: API_TOKEN,
-          action: "cancelOrder",
           orderId,
           reason: r,
           tgUserId,
@@ -979,23 +973,21 @@ export default function App() {
                 />
 
                 <label style={styles.label}>
-                  Адрес доставки{" "}
-                  <span style={{ color: styles.colors.danger }}>*</span>
+                  Адрес <span style={{ color: styles.colors.danger }}>*</span>
                 </label>
-                <input
-                  style={styles.input}
+                <textarea
+                  style={styles.textarea}
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
-                  placeholder="улица, дом, подъезд, этаж, кв."
-                  autoComplete="street-address"
+                  placeholder="Улица, дом, квартира / подъезд / код домофона"
                 />
 
-                <label style={styles.label}>Комментарий (необязательно)</label>
-                <input
-                  style={styles.input}
+                <label style={styles.label}>Комментарий к заказу</label>
+                <textarea
+                  style={styles.textarea}
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
-                  placeholder="код домофона, удобное время"
+                  placeholder="Например: позвонить за 10 минут"
                 />
 
                 <div style={styles.totalBlock}>
@@ -1003,34 +995,20 @@ export default function App() {
                     <div>Товары</div>
                     <div style={{ fontWeight: 700 }}>{money(total)} ₽</div>
                   </div>
-
                   <div style={styles.totalRow}>
-                    <div>
-                      Доставка{" "}
-                      {delivery === 0 ? (
-                        <span style={styles.freeTag}>бесплатно</span>
-                      ) : (
-                        <span style={styles.mutedTag}>
-                          до {money(FREE_DELIVERY_FROM)} ₽
-                        </span>
-                      )}
-                    </div>
+                    <div>Доставка</div>
                     <div style={{ fontWeight: 700 }}>{money(delivery)} ₽</div>
                   </div>
-
                   <div style={styles.totalRowBig}>
                     <div>Итого</div>
-                    <div style={{ fontWeight: 800 }}>
-                      {money(grandTotal)} ₽
-                    </div>
+                    <div style={{ fontWeight: 800 }}>{money(grandTotal)} ₽</div>
                   </div>
                 </div>
 
                 <button
                   style={{
                     ...styles.primaryBtn,
-                    opacity: sending ? 0.75 : 1,
-                    cursor: sending ? "not-allowed" : "pointer",
+                    ...(sending ? styles.primaryBtnDisabled : {}),
                   }}
                   onClick={submitOrder}
                   disabled={sending}
@@ -1041,7 +1019,6 @@ export default function App() {
                 <button
                   style={styles.secondaryBtn}
                   onClick={() => setTab("cart")}
-                  disabled={sending}
                 >
                   Назад в корзину
                 </button>
@@ -1050,807 +1027,714 @@ export default function App() {
 
             {tab === "orders" && (
               <div style={styles.panel}>
-                <div style={styles.ordersHeader}>
-                  <div style={styles.h2}>Мои заказы</div>
-                  <button
-                    style={styles.refreshBtn}
-                    onClick={loadMyOrders}
-                    disabled={ordersLoading}
-                    title="Обновить"
-                  >
-                    {ordersLoading ? "Обновляем…" : "↻"}
-                  </button>
-                </div>
+                <div style={styles.h2}>Мои заказы</div>
 
-                {!getTelegramWebApp() && (
-                  <div style={styles.infoMuted}>
-                    Для поиска заказов укажи тот же телефон, что был в оформлении.
-                  </div>
-                )}
+                <label style={styles.label}>Телефон</label>
+                <input
+                  style={styles.input}
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="+7..."
+                  autoComplete="tel"
+                  inputMode="tel"
+                />
 
-                {ordersError ? (
+                <button
+                  style={styles.primaryBtn}
+                  onClick={loadMyOrders}
+                  disabled={ordersLoading}
+                >
+                  {ordersLoading ? "Загрузка..." : "Обновить"}
+                </button>
+
+                {ordersError && (
                   <div style={{ ...styles.info, color: styles.colors.danger }}>
                     {ordersError}
                   </div>
-                ) : null}
+                )}
 
-                {ordersLoading && !orders.length ? (
-                  <div style={styles.info}>Загружаем заказы…</div>
-                ) : null}
-
-                {!ordersLoading && !ordersError && orders.length === 0 ? (
-                  <div style={styles.infoMuted}>
-                    Заказов пока нет. Оформи первый заказ — и он появится здесь.
-                  </div>
-                ) : null}
+                {!ordersLoading && !ordersError && orders.length === 0 && (
+                  <div style={styles.info}>Заказы не найдены</div>
+                )}
 
                 <div style={styles.ordersList}>
-                  {orders.map((o, idx) => (
-                    <div key={o.orderId || idx} style={styles.orderCard}>
-                      <div style={styles.orderTop}>
-                        <div style={styles.orderDate}>
-                          {formatDate(o.createdAt)}
-                        </div>
-                        <div style={styles.orderStatus}>
-                          {humanStatus(o.status)}
-                        </div>
-                      </div>
+                  {orders.map((o) => {
+                    const canCancel =
+                      String(o.status || "").toLowerCase() === "new";
 
-                      <div style={styles.orderTotals}>
-                        <div style={styles.orderRow}>
-                          <div>Товары</div>
-                          <div style={{ fontWeight: 700 }}>{money(o.total)} ₽</div>
-                        </div>
-                        <div style={styles.orderRow}>
-                          <div>Доставка</div>
-                          <div style={{ fontWeight: 700 }}>
-                            {money(o.delivery)} ₽
+                    return (
+                      <div key={o.orderId} style={styles.orderCard}>
+                        <div style={styles.orderTop}>
+                          <div style={styles.orderMain}>
+                            <div style={styles.orderId}>Заказ #{o.orderId}</div>
+                            <div style={styles.orderDate}>
+                              {formatDate(o.createdAt)}
+                            </div>
+                          </div>
+
+                          <div style={styles.orderStatus}>
+                            {humanStatus(o.status)}
                           </div>
                         </div>
-                        <div style={styles.orderRowBig}>
-                          <div>Итого</div>
+
+                        <div style={styles.orderPrices}>
+                          <div>Товары: {money(o.total)} ₽</div>
+                          <div>Доставка: {money(o.delivery)} ₽</div>
                           <div style={{ fontWeight: 800 }}>
-                            {money(o.grandTotal)} ₽
+                            Итого: {money(o.grandTotal)} ₽
                           </div>
                         </div>
-                      </div>
 
-                      {o.status === "canceled" && o.cancelReason ? (
-                        <div style={styles.cancelReason}>
-                          Причина отмены: {o.cancelReason}
-                        </div>
-                      ) : null}
-
-                      <div style={styles.orderItems}>
-                        {Array.isArray(o.items) &&
-                          o.items.slice(0, 20).map((it, j) => (
-                            <div key={j} style={styles.orderItemRow}>
-                              <div style={styles.orderItemName} title={it.name}>
-                                {it.name}
-                              </div>
-                              <div style={styles.orderItemQty}>×{it.qty}</div>
-                              <div style={styles.orderItemSum}>
-                                {money(it.sum)} ₽
-                              </div>
+                        <div style={styles.orderItems}>
+                          {o.items?.map((it, idx) => (
+                            <div key={`${o.orderId}_${idx}`} style={styles.orderItem}>
+                              • {it.name} — {it.qty} {it.unit || ""} ={" "}
+                              {money(it.sum)} ₽
                             </div>
                           ))}
-                        {Array.isArray(o.items) && o.items.length > 20 ? (
-                          <div style={styles.infoMuted}>
-                            Показаны первые 20 позиций…
+                        </div>
+
+                        {o.cancelReason ? (
+                          <div style={styles.cancelReason}>
+                            Причина отмены: {o.cancelReason}
                           </div>
                         ) : null}
-                      </div>
 
-                      {String(o.status || "").toLowerCase() === "new" &&
-                      o.orderId ? (
-                        <button
-                          style={styles.cancelBtn}
-                          onClick={() => {
-                            setCancelOrderId(o.orderId);
-                            setCancelReason("");
-                          }}
-                        >
-                          Отменить заказ
-                        </button>
-                      ) : null}
-                    </div>
-                  ))}
+                        {canCancel && (
+                          <button
+                            style={styles.dangerBtn}
+                            onClick={() => setCancelOrderId(o.orderId)}
+                          >
+                            Отменить заказ
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
           </>
         )}
       </div>
-
-      {tab === "catalog" && cartCount > 0 && (
-        <button style={styles.floatingCart} onClick={() => setTab("cart")}>
-          🛒 {cartCount} • {money(total)} ₽
-        </button>
-      )}
     </div>
   );
 }
 
-const styles: Record<string, React.CSSProperties> & {
+const styles: Record<string, React.CSSProperties> = {
   colors: {
-    ink: string;
-    primary: string;
-    sun: string;
-    orange: string;
-    danger: string;
-  };
-} = {
-  colors: {
-    ink: "#264653",
-    primary: "#2a9d8f",
-    sun: "#e9c46a",
-    orange: "#f4a261",
-    danger: "#e76f51",
+    bg: "#f7f4ef",
+    panel: "#ffffff",
+    text: "#2d251d",
+    subtext: "#6f665d",
+    border: "#e7ddd2",
+    accent: "#8a5a36",
+    accentDark: "#6f4528",
+    accentSoft: "#f3e7da",
+    success: "#2e7d32",
+    successBg: "#e8f5e9",
+    danger: "#c62828",
+    dangerBg: "#fdeaea",
+    info: "#1565c0",
+    infoBg: "#e8f1fd",
+    chip: "#efe5d8",
+    chipActive: "#8a5a36",
   },
 
   page: {
-    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
-    padding: 16,
     minHeight: "100vh",
-    boxSizing: "border-box",
-    color: "#264653",
-    backgroundImage:
-      "linear-gradient(rgba(255,255,255,0.30), rgba(255,255,255,0.50)), url('/images/bg-farm.png')",
-    backgroundRepeat: "no-repeat",
-    backgroundPosition: "center top",
-    backgroundSize: "cover",
-    backgroundAttachment: "fixed",
+    background: "#f7f4ef",
+    color: "#2d251d",
+    fontFamily:
+      '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif',
+    padding: 12,
   },
 
   container: {
-    maxWidth: 520,
-    width: "100%",
-    boxSizing: "border-box",
+    maxWidth: 980,
     margin: "0 auto",
-    background: "rgba(255,255,255,0.60)",
-    borderRadius: 22,
-    padding: 12,
-    boxShadow: "0 18px 34px rgba(38,70,83,0.18)",
-    border: "1px solid rgba(38,70,83,0.10)",
-    backdropFilter: "blur(8px)",
-    WebkitBackdropFilter: "blur(8px)",
-    overflow: "hidden",
-  },
-
-  toast: {
-    position: "sticky",
-    top: 8,
-    zIndex: 9999,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-    padding: "12px 12px",
-    borderRadius: 14,
-    boxShadow: "0 10px 22px rgba(38,70,83,0.16)",
-    marginBottom: 10,
-    border: "1px solid rgba(38,70,83,0.10)",
-    background: "rgba(255,255,255,0.92)",
-    color: "#264653",
-    backdropFilter: "blur(10px)",
-    WebkitBackdropFilter: "blur(10px)",
-    boxSizing: "border-box",
-  },
-  toastError: { background: "rgba(231,111,81,0.16)", color: "#264653" },
-  toastSuccess: { background: "rgba(42,157,143,0.16)", color: "#264653" },
-  toastInfo: { background: "rgba(233,196,106,0.20)", color: "#264653" },
-  toastClose: {
-    border: 0,
-    background: "transparent",
-    fontSize: 22,
-    lineHeight: 1,
-    cursor: "pointer",
-    padding: 4,
-    color: "#264653",
   },
 
   headerGrid: {
     display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 10,
-    alignItems: "start",
+    gridTemplateColumns: "1fr auto",
+    gap: 12,
+    alignItems: "center",
     marginBottom: 12,
   },
-  headerLeft: { display: "grid", gap: 10, minWidth: 0 },
-  headerRight: { display: "grid", gap: 10, minWidth: 0 },
 
-  title: {
-    fontSize: 26,
-    fontWeight: 700,
-    letterSpacing: -0.2,
-    background: "linear-gradient(90deg, #1E2A32 0%, #e9c46a 100%)",
-    WebkitBackgroundClip: "text",
-    WebkitTextFillColor: "transparent",
-    minWidth: 0,
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-    height: 42,
+  headerLeft: {
     display: "flex",
     alignItems: "center",
-    marginLeft: 9,
+    gap: 10,
+    flexWrap: "wrap",
+  },
+
+  headerRight: {
+    display: "flex",
+    gap: 8,
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
+  },
+
+  title: {
+    fontSize: 28,
+    fontWeight: 900,
+    letterSpacing: 0.2,
   },
 
   navBtn: {
-    width: "100%",
-    maxWidth: "100%",
-    boxSizing: "border-box",
-    border: "1px solid rgba(38,70,83,0.18)",
-    background: "rgba(255,255,255,0.78)",
+    border: "1px solid #e7ddd2",
+    background: "#fff",
+    color: "#2d251d",
+    borderRadius: 12,
     padding: "10px 14px",
-    borderRadius: 999,
-    fontWeight: 650,
     cursor: "pointer",
-    boxShadow: "0 6px 14px rgba(38,70,83,0.12)",
-    color: "#264653",
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    height: 42,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
+    fontWeight: 700,
   },
 
   navBtnActive: {
-    borderColor: "rgba(42,157,143,0.35)",
-    background:
-      "linear-gradient(180deg, rgba(42,157,143,0.98) 0%, rgba(38,70,83,0.98) 140%)",
-    color: "#ffffff",
-    boxShadow: "0 10px 22px rgba(42,157,143,0.20)",
+    background: "#8a5a36",
+    color: "#fff",
+    borderColor: "#8a5a36",
+  },
+
+  info: {
+    background: "#fff",
+    border: "1px solid #e7ddd2",
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 12,
+  },
+
+  infoMuted: {
+    background: "#fffaf4",
+    border: "1px solid #f0e0c7",
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 12,
+    color: "#6f665d",
   },
 
   chipsRow: {
     display: "flex",
-    gap: 10,
+    gap: 8,
     flexWrap: "wrap",
-    overflowX: "visible",
-    paddingBottom: 10,
-    marginBottom: 10,
+    marginBottom: 14,
   },
 
   chip: {
-    border: "1px solid rgba(38,70,83,0.18)",
-    background: "rgba(255,255,255,0.74)",
-    padding: "9px 12px",
+    border: "1px solid #e7ddd2",
+    background: "#efe5d8",
+    color: "#2d251d",
     borderRadius: 999,
-    fontWeight: 600,
+    padding: "9px 14px",
     cursor: "pointer",
-    whiteSpace: "nowrap",
-    boxShadow: "0 6px 14px rgba(38,70,83,0.10)",
-    color: "#264653",
-    boxSizing: "border-box",
-  },
-
-  chipActive: {
-    background:
-      "linear-gradient(180deg, rgba(42,157,143,0.98) 0%, rgba(38,70,83,0.98) 140%)",
-    color: "#ffffff",
-    borderColor: "rgba(42,157,143,0.35)",
-    boxShadow: "0 10px 22px rgba(42,157,143,0.18)",
-  },
-
-  chipPromo: {
-    background: "rgba(244,162,97,0.20)",
-    border: "1px solid rgba(244,162,97,0.65)",
-    color: "#264653",
     fontWeight: 700,
   },
 
-  chipPromoActive: {
-    background:
-      "linear-gradient(180deg, rgba(244,162,97,1) 0%, rgba(231,111,81,1) 140%)",
-    color: "#ffffff",
-    borderColor: "rgba(244,162,97,0.35)",
-    boxShadow: "0 10px 22px rgba(244,162,97,0.25)",
+  chipActive: {
+    background: "#8a5a36",
+    color: "#fff",
+    borderColor: "#8a5a36",
   },
 
-  info: { padding: 12, fontWeight: 650, color: "#264653" },
-  infoMuted: { padding: 8, color: "rgba(38,70,83,0.82)", fontWeight: 550 },
+  chipPromo: {
+    background: "#fff0e2",
+    borderColor: "#f0c9a8",
+    color: "#8a4b16",
+  },
 
-  list: { display: "grid", gap: 12 },
+  chipPromoActive: {
+    background: "#d56d1f",
+    color: "#fff",
+    borderColor: "#d56d1f",
+  },
+
+  list: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+    gap: 14,
+  },
 
   card: {
-    background: "rgba(255,255,255,0.55)",
+    background: "#fff",
+    border: "1px solid #e7ddd2",
     borderRadius: 18,
     overflow: "hidden",
-    boxShadow: "0 10px 22px rgba(38,70,83,0.14)",
-    border: "1px solid rgba(38,70,83,0.10)",
-    display: "grid",
-    gridTemplateColumns: "110px 1fr",
-    alignItems: "start",
-    boxSizing: "border-box",
+    boxShadow: "0 2px 10px rgba(0,0,0,0.04)",
+    display: "flex",
+    flexDirection: "column",
   },
 
   cardImg: {
-    width: 110,
-    height: 108,
+    width: "100%",
+    aspectRatio: "1 / 1",
     objectFit: "cover",
-    display: "block",
-    alignSelf: "start",
+    background: "#f5efe8",
     cursor: "zoom-in",
   },
 
   cardImgPlaceholder: {
-    width: 110,
-    height: 108,
+    width: "100%",
+    aspectRatio: "1 / 1",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    background: "rgba(233,196,106,0.22)",
-    color: "#264653",
-    fontWeight: 650,
-    boxSizing: "border-box",
-    alignSelf: "start",
+    background: "#f5efe8",
+    color: "#8d8379",
+    fontWeight: 700,
   },
 
   cardBody: {
-    padding: 12,
+    padding: 14,
     display: "flex",
     flexDirection: "column",
-    gap: 6,
-    boxSizing: "border-box",
+    gap: 10,
+    flex: 1,
   },
 
   cardName: {
-    fontSize: 16,
-    fontWeight: 650,
-    lineHeight: 1.15,
-    color: "#264653",
-    display: "-webkit-box",
-    WebkitLineClamp: 2,
-    WebkitBoxOrient: "vertical",
-    overflow: "hidden",
+    fontSize: 17,
+    fontWeight: 800,
+    lineHeight: 1.25,
   },
 
   cardDesc: {
-    fontSize: 12,
-    color: "rgba(38,70,83,0.80)",
-    lineHeight: 1.25,
-    fontWeight: 450,
-    display: "-webkit-box",
-    WebkitLineClamp: 5,
-    WebkitBoxOrient: "vertical",
-    overflow: "hidden",
+    fontSize: 14,
+    color: "#6f665d",
+    lineHeight: 1.4,
+    minHeight: 38,
   },
 
-  cardMeta: { fontWeight: 550 },
+  cardMeta: {
+    display: "flex",
+    alignItems: "baseline",
+    gap: 4,
+  },
 
-  price: { color: "#2a9d8f", fontWeight: 700 },
-  unit: { color: "rgba(38,70,83,0.85)", fontWeight: 500 },
+  price: {
+    fontSize: 22,
+    fontWeight: 900,
+    color: "#8a5a36",
+  },
+
+  unit: {
+    color: "#6f665d",
+    fontSize: 14,
+  },
 
   buyBtn: {
-    marginTop: 4,
-    background:
-      "linear-gradient(180deg, rgba(42,157,143,1) 0%, rgba(38,70,83,1) 140%)",
+    marginTop: "auto",
+    border: "none",
+    background: "#8a5a36",
     color: "#fff",
-    border: "1px solid rgba(255,255,255,0.22)",
-    borderRadius: 14,
-    padding: "9px 12px",
-    fontWeight: 650,
+    borderRadius: 12,
+    padding: "12px 14px",
     cursor: "pointer",
-    width: "fit-content",
-    boxShadow: "0 10px 22px rgba(42,157,143,0.18)",
-    boxSizing: "border-box",
+    fontWeight: 800,
   },
 
-  qtyInline: { display: "flex", alignItems: "center", gap: 8, marginTop: 4 },
+  qtyInline: {
+    marginTop: "auto",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
 
   qtyBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
-    border: "1px solid rgba(38,70,83,0.16)",
-    background: "rgba(255,255,255,0.82)",
-    fontSize: 18,
+    border: "1px solid #e7ddd2",
+    background: "#fff",
+    color: "#2d251d",
+    width: 38,
+    height: 38,
+    borderRadius: 10,
     cursor: "pointer",
-    boxShadow: "0 8px 16px rgba(38,70,83,0.10)",
-    color: "#264653",
-    boxSizing: "border-box",
+    fontSize: 20,
+    fontWeight: 800,
   },
 
   qtyNum: {
-    minWidth: 24,
+    minWidth: 34,
     textAlign: "center",
-    fontWeight: 650,
-    color: "#264653",
+    fontWeight: 800,
+    fontSize: 18,
   },
 
   panel: {
-    background: "rgba(255,255,255,0.80)",
+    background: "#fff",
+    border: "1px solid #e7ddd2",
     borderRadius: 18,
-    padding: 12,
-    boxShadow: "0 10px 22px rgba(38,70,83,0.14)",
-    border: "1px solid rgba(38,70,83,0.10)",
-    boxSizing: "border-box",
+    padding: 16,
+    boxShadow: "0 2px 10px rgba(0,0,0,0.04)",
   },
 
-  totalBlock: {
-    marginTop: 10,
-    paddingTop: 10,
-    borderTop: "1px solid rgba(38,70,83,0.10)",
-    display: "grid",
-    gap: 8,
+  h2: {
+    fontSize: 24,
+    fontWeight: 900,
+    marginBottom: 14,
   },
-
-  totalRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    fontSize: 14,
-    color: "#264653",
-    fontWeight: 550,
-  },
-
-  totalRowBig: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    fontSize: 16,
-    paddingTop: 6,
-    marginTop: 4,
-    borderTop: "1px dashed rgba(38,70,83,0.22)",
-    color: "#264653",
-  },
-
-  freeTag: {
-    marginLeft: 8,
-    padding: "3px 8px",
-    borderRadius: 999,
-    background: "rgba(233,196,106,0.30)",
-    color: "#264653",
-    fontWeight: 650,
-    fontSize: 12,
-    border: "1px solid rgba(233,196,106,0.65)",
-    boxSizing: "border-box",
-  },
-
-  mutedTag: {
-    marginLeft: 8,
-    padding: "3px 8px",
-    borderRadius: 999,
-    background: "rgba(244,162,97,0.18)",
-    color: "#264653",
-    fontWeight: 600,
-    fontSize: 12,
-    border: "1px solid rgba(244,162,97,0.55)",
-    boxSizing: "border-box",
-  },
-
-  h2: { fontSize: 18, fontWeight: 650, marginBottom: 10, color: "#264653" },
 
   label: {
     display: "block",
-    marginTop: 10,
-    fontWeight: 600,
     fontSize: 14,
-    color: "#264653",
+    fontWeight: 700,
+    marginBottom: 6,
+    marginTop: 12,
   },
 
   input: {
     width: "100%",
     boxSizing: "border-box",
-    padding: "12px 12px",
-    borderRadius: 14,
-    border: "1px solid rgba(38,70,83,0.16)",
-    marginTop: 6,
-    fontSize: 14,
-    background: "rgba(255,255,255,0.86)",
+    border: "1px solid #e7ddd2",
+    borderRadius: 12,
+    padding: "12px 14px",
+    fontSize: 16,
     outline: "none",
-    boxShadow: "0 8px 14px rgba(38,70,83,0.08)",
-    color: "#264653",
+    background: "#fff",
   },
 
   textarea: {
     width: "100%",
+    minHeight: 96,
     boxSizing: "border-box",
-    padding: "12px 12px",
-    borderRadius: 14,
-    border: "1px solid rgba(38,70,83,0.16)",
-    marginTop: 6,
-    fontSize: 14,
-    background: "rgba(255,255,255,0.86)",
+    border: "1px solid #e7ddd2",
+    borderRadius: 12,
+    padding: "12px 14px",
+    fontSize: 16,
     outline: "none",
-    boxShadow: "0 8px 14px rgba(38,70,83,0.08)",
-    color: "#264653",
-    minHeight: 90,
+    background: "#fff",
     resize: "vertical",
   },
 
   primaryBtn: {
+    marginTop: 14,
     width: "100%",
-    marginTop: 12,
-    background:
-      "linear-gradient(180deg, rgba(42,157,143,1) 0%, rgba(38,70,83,1) 140%)",
+    border: "none",
+    background: "#8a5a36",
     color: "#fff",
-    border: "1px solid rgba(255,255,255,0.22)",
-    borderRadius: 16,
-    padding: "13px 14px",
-    fontWeight: 650,
+    borderRadius: 12,
+    padding: "14px 16px",
     cursor: "pointer",
-    boxShadow: "0 12px 26px rgba(42,157,143,0.18)",
-    boxSizing: "border-box",
+    fontWeight: 800,
+    fontSize: 16,
+  },
+
+  primaryBtnDisabled: {
+    opacity: 0.65,
+    cursor: "not-allowed",
   },
 
   secondaryBtn: {
-    width: "100%",
     marginTop: 10,
-    background: "rgba(244,162,97,0.18)",
-    color: "#264653",
-    border: "1px solid rgba(244,162,97,0.55)",
-    borderRadius: 16,
-    padding: "13px 14px",
-    fontWeight: 650,
+    width: "100%",
+    border: "1px solid #e7ddd2",
+    background: "#fff",
+    color: "#2d251d",
+    borderRadius: 12,
+    padding: "14px 16px",
     cursor: "pointer",
-    boxShadow: "0 10px 22px rgba(244,162,97,0.14)",
-    boxSizing: "border-box",
+    fontWeight: 800,
+    fontSize: 16,
   },
 
-  floatingCart: {
-    position: "fixed",
-    left: "50%",
-    transform: "translateX(-50%)",
-    bottom: 16,
-    zIndex: 9999,
-    maxWidth: 520,
-    width: "calc(100% - 32px)",
-    boxSizing: "border-box",
-    border: "1px solid rgba(38,70,83,0.16)",
-    background:
-      "linear-gradient(180deg, rgba(233,196,106,0.92) 0%, rgba(244,162,97,0.90) 100%)",
-    color: "#264653",
-    borderRadius: 999,
+  dangerBtn: {
+    marginTop: 12,
+    border: "none",
+    background: "#c62828",
+    color: "#fff",
+    borderRadius: 12,
     padding: "12px 14px",
-    fontWeight: 650,
     cursor: "pointer",
-    boxShadow: "0 16px 32px rgba(38,70,83,0.18)",
+    fontWeight: 800,
   },
 
-  ordersHeader: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-    marginBottom: 6,
-  },
-
-  refreshBtn: {
-    border: "1px solid rgba(38,70,83,0.16)",
-    background: "rgba(255,255,255,0.85)",
-    borderRadius: 12,
-    padding: "8px 10px",
-    cursor: "pointer",
-    fontWeight: 700,
-    boxShadow: "0 8px 14px rgba(38,70,83,0.08)",
-  },
-
-  ordersList: { display: "grid", gap: 10, marginTop: 10 },
-
-  orderCard: {
-    background: "rgba(255,255,255,0.70)",
-    border: "1px solid rgba(38,70,83,0.10)",
-    borderRadius: 16,
-    padding: 12,
-    boxShadow: "0 10px 18px rgba(38,70,83,0.10)",
-  },
-
-  orderTop: {
-    display: "flex",
-    alignItems: "baseline",
-    justifyContent: "space-between",
-    gap: 10,
-    marginBottom: 8,
-  },
-
-  orderDate: { fontWeight: 650, color: "#264653" },
-  orderStatus: { fontWeight: 650, color: "rgba(38,70,83,0.85)" },
-
-  orderTotals: {
-    display: "grid",
-    gap: 6,
-    paddingBottom: 8,
-    borderBottom: "1px solid rgba(38,70,83,0.10)",
-    marginBottom: 8,
-  },
-
-  orderRow: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    fontSize: 14,
-    color: "#264653",
-  },
-
-  orderRowBig: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    fontSize: 15,
-    color: "#264653",
-    paddingTop: 6,
-    marginTop: 2,
-    borderTop: "1px dashed rgba(38,70,83,0.20)",
-  },
-
-  orderItems: { display: "grid", gap: 6 },
-
-  orderItemRow: {
-    display: "grid",
-    gridTemplateColumns: "1fr auto auto",
-    gap: 8,
-    alignItems: "baseline",
-  },
-
-  orderItemName: {
-    fontSize: 13,
-    color: "rgba(38,70,83,0.90)",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  },
-
-  orderItemQty: {
-    fontSize: 13,
-    color: "rgba(38,70,83,0.75)",
-    fontWeight: 600,
-  },
-
-  orderItemSum: { fontSize: 13, color: "#264653", fontWeight: 650 },
-
-  cancelBtn: {
-    width: "100%",
-    marginTop: 10,
-    border: "1px solid rgba(231,111,81,0.55)",
-    background: "rgba(231,111,81,0.14)",
-    color: "#264653",
+  totalBlock: {
+    marginTop: 14,
+    background: "#faf7f2",
+    border: "1px solid #eee1d2",
     borderRadius: 14,
-    padding: "11px 12px",
-    fontWeight: 750,
-    cursor: "pointer",
-    boxShadow: "0 8px 14px rgba(231,111,81,0.12)",
-    boxSizing: "border-box",
+    padding: 14,
   },
 
-  cancelReason: {
-    marginTop: 8,
-    fontSize: 13,
-    color: "rgba(38,70,83,0.88)",
-    background: "rgba(244,162,97,0.16)",
-    border: "1px solid rgba(244,162,97,0.40)",
-    borderRadius: 12,
-    padding: "8px 10px",
+  totalRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    padding: "6px 0",
+  },
+
+  totalRowBig: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    paddingTop: 10,
+    marginTop: 10,
+    borderTop: "1px solid #eadfce",
+    fontSize: 18,
+  },
+
+  freeTag: {
+    display: "inline-block",
+    marginLeft: 6,
+    padding: "2px 8px",
+    borderRadius: 999,
+    background: "#e8f5e9",
+    color: "#2e7d32",
+    fontSize: 12,
+    fontWeight: 800,
+    verticalAlign: "middle",
+  },
+
+  mutedTag: {
+    display: "inline-block",
+    marginLeft: 6,
+    padding: "2px 8px",
+    borderRadius: 999,
+    background: "#f2eee8",
+    color: "#6f665d",
+    fontSize: 12,
+    fontWeight: 700,
+    verticalAlign: "middle",
   },
 
   cartRow2: {
     display: "grid",
-    gridTemplateColumns: "minmax(0, 1fr) 132px",
-    gap: 10,
-    alignItems: "start",
+    gridTemplateColumns: "1fr auto",
+    gap: 12,
+    alignItems: "center",
     padding: "12px 0",
-    borderBottom: "1px solid rgba(38,70,83,0.10)",
+    borderBottom: "1px solid #f0e7dc",
   },
 
-  cartLeft2: { minWidth: 0, display: "grid", gap: 4 },
+  cartLeft2: {
+    minWidth: 0,
+  },
 
   cartName2: {
-    fontWeight: 750,
-    fontSize: 15,
-    color: "#264653",
-    lineHeight: 1.18,
-    display: "-webkit-box",
-    WebkitLineClamp: 3,
-    WebkitBoxOrient: "vertical",
-    overflow: "hidden",
+    fontWeight: 800,
+    lineHeight: 1.3,
+    marginBottom: 4,
   },
 
   cartMeta2: {
-    color: "rgba(38,70,83,0.75)",
-    fontWeight: 550,
-    fontSize: 12,
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
+    color: "#6f665d",
+    fontSize: 14,
   },
 
-  cartRight2: { display: "grid", justifyItems: "end", gap: 8 },
+  cartRight2: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
+  },
 
-  cartSum2: { fontWeight: 800, color: "#264653", whiteSpace: "nowrap" },
+  cartSum2: {
+    fontWeight: 800,
+    minWidth: 100,
+    textAlign: "right",
+  },
 
   cartQty2: {
-    display: "inline-flex",
+    display: "flex",
     alignItems: "center",
-    gap: 6,
-    padding: "6px 6px",
-    borderRadius: 14,
-    border: "1px solid rgba(38,70,83,0.12)",
-    background: "rgba(255,255,255,0.70)",
-    boxShadow: "0 8px 14px rgba(38,70,83,0.08)",
+    gap: 8,
   },
 
   qtyBtn2: {
-    width: 28,
-    height: 28,
+    border: "1px solid #e7ddd2",
+    background: "#fff",
+    color: "#2d251d",
+    width: 34,
+    height: 34,
     borderRadius: 10,
-    border: "1px solid rgba(38,70,83,0.14)",
-    background: "rgba(255,255,255,0.92)",
-    fontSize: 18,
     cursor: "pointer",
-    color: "#264653",
-    lineHeight: 1,
+    fontSize: 18,
+    fontWeight: 800,
   },
 
   qtyNum2: {
-    minWidth: 18,
+    minWidth: 28,
     textAlign: "center",
     fontWeight: 800,
-    color: "#264653",
   },
 
   removeBtn2: {
+    border: "1px solid #f2caca",
+    background: "#fff5f5",
+    color: "#c62828",
     width: 34,
     height: 34,
-    borderRadius: 12,
-    border: "1px solid rgba(231,111,81,0.55)",
-    background: "rgba(231,111,81,0.14)",
-    color: "#264653",
-    fontSize: 20,
+    borderRadius: 10,
     cursor: "pointer",
+    fontSize: 20,
+    fontWeight: 800,
+  },
+
+  ordersList: {
+    display: "grid",
+    gap: 12,
+    marginTop: 14,
+  },
+
+  orderCard: {
+    border: "1px solid #e7ddd2",
+    borderRadius: 16,
+    padding: 14,
+    background: "#fffdfb",
+  },
+
+  orderTop: {
+    display: "grid",
+    gridTemplateColumns: "1fr auto",
+    gap: 12,
+    alignItems: "start",
+    marginBottom: 10,
+  },
+
+  orderMain: {
+    minWidth: 0,
+  },
+
+  orderId: {
+    fontWeight: 900,
+    fontSize: 16,
+    marginBottom: 4,
+    wordBreak: "break-word",
+  },
+
+  orderDate: {
+    color: "#6f665d",
+    fontSize: 14,
+  },
+
+  orderStatus: {
+    background: "#f3e7da",
+    color: "#8a5a36",
+    borderRadius: 999,
+    padding: "6px 10px",
+    fontWeight: 800,
+    fontSize: 13,
+    whiteSpace: "nowrap",
+  },
+
+  orderPrices: {
+    display: "grid",
+    gap: 4,
+    marginBottom: 10,
+  },
+
+  orderItems: {
+    display: "grid",
+    gap: 4,
+    color: "#3d342b",
+  },
+
+  orderItem: {
+    lineHeight: 1.4,
+  },
+
+  cancelReason: {
+    marginTop: 10,
+    background: "#fff5f5",
+    color: "#8b1f1f",
+    border: "1px solid #f3cdcd",
+    borderRadius: 12,
+    padding: "10px 12px",
+  },
+
+  toast: {
+    position: "fixed",
+    top: 12,
+    right: 12,
+    zIndex: 3000,
+    minWidth: 260,
+    maxWidth: 420,
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+    padding: "12px 14px",
+    borderRadius: 14,
+    border: "1px solid #e7ddd2",
+    background: "#fff",
+    boxShadow: "0 10px 24px rgba(0,0,0,0.12)",
+  },
+
+  toastError: {
+    background: "#fdeaea",
+    borderColor: "#f0c0c0",
+    color: "#8b1f1f",
+  },
+
+  toastSuccess: {
+    background: "#e8f5e9",
+    borderColor: "#bfe1c1",
+    color: "#1f5e24",
+  },
+
+  toastInfo: {
+    background: "#e8f1fd",
+    borderColor: "#bfd3f5",
+    color: "#174c91",
+  },
+
+  toastClose: {
+    border: "none",
+    background: "transparent",
+    color: "inherit",
+    cursor: "pointer",
+    fontSize: 20,
+    fontWeight: 800,
     lineHeight: 1,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    boxShadow: "0 8px 14px rgba(231,111,81,0.12)",
+    padding: 0,
   },
 
   zoomOverlay: {
     position: "fixed",
     inset: 0,
-    zIndex: 10000,
-    background: "rgba(0,0,0,0.55)",
+    background: "rgba(0,0,0,0.65)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
+    zIndex: 2500,
     padding: 16,
   },
 
   zoomBox: {
     position: "relative",
-    width: "min(520px, 100%)",
-    maxHeight: "85vh",
-    background: "rgba(255,255,255,0.92)",
+    maxWidth: "min(92vw, 860px)",
+    maxHeight: "90vh",
+    background: "#fff",
     borderRadius: 18,
-    padding: 10,
-    boxShadow: "0 18px 40px rgba(0,0,0,0.35)",
-    overflow: "hidden",
-  },
-
-  zoomImg: {
-    width: "100%",
-    height: "auto",
-    maxHeight: "80vh",
-    objectFit: "contain",
-    borderRadius: 14,
-    display: "block",
+    padding: 12,
+    boxShadow: "0 18px 42px rgba(0,0,0,0.28)",
   },
 
   zoomClose: {
     position: "absolute",
-    top: 8,
+    top: 6,
     right: 8,
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    border: "1px solid rgba(38,70,83,0.16)",
-    background: "rgba(255,255,255,0.85)",
+    border: "none",
+    background: "rgba(255,255,255,0.94)",
+    width: 34,
+    height: 34,
+    borderRadius: 999,
     cursor: "pointer",
-    fontSize: 22,
-    lineHeight: 1,
-    color: "#264653",
-    boxShadow: "0 8px 14px rgba(0,0,0,0.12)",
+    fontSize: 20,
+    fontWeight: 900,
+    zIndex: 2,
+  },
+
+  zoomImg: {
+    display: "block",
+    maxWidth: "100%",
+    maxHeight: "calc(90vh - 24px)",
+    borderRadius: 12,
+    objectFit: "contain",
   },
 };
