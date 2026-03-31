@@ -289,17 +289,17 @@ function getStepQty(product: Product) {
   return getSellMode(product) === "weight" ? 50 : 1;
 }
 
+function formatKg(kg: number) {
+  return Number.isInteger(kg) ? String(kg) : String(kg).replace(".", ",");
+}
+
 function getQtyLabel(product: Product, qty: number) {
   if (getSellMode(product) !== "weight") {
     return `${qty} шт`;
   }
 
   if (qty >= 1000) {
-    const kg = qty / 1000;
-    const formatted = Number.isInteger(kg)
-      ? String(kg)
-      : String(kg).replace(".", ",");
-    return `${formatted} кг`;
+    return `${formatKg(qty / 1000)} кг`;
   }
 
   return `${qty} г`;
@@ -348,7 +348,24 @@ function calcLineSum(product: Product, qty: number) {
   return qty * product.price;
 }
 
+function useIsMobile(breakpoint = 720) {
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.innerWidth <= breakpoint;
+  });
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth <= breakpoint);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [breakpoint]);
+
+  return isMobile;
+}
+
 export default function App() {
+  const isMobile = useIsMobile();
+
   const [loading, setLoading] = useState(true);
   const [loadingHint, setLoadingHint] = useState<string>("");
   const [error, setError] = useState<string>("");
@@ -841,6 +858,35 @@ export default function App() {
     );
   }
 
+  const mobileCartRowStyle: React.CSSProperties = isMobile
+    ? {
+        display: "grid",
+        gridTemplateColumns: "1fr",
+        gap: 12,
+        alignItems: "start",
+        padding: "14px 0",
+        borderBottom: "1px solid #f0e7dc",
+      }
+    : styles.cartRow2;
+
+  const mobileCartRightStyle: React.CSSProperties = isMobile
+    ? {
+        display: "grid",
+        gap: 8,
+        minWidth: 0,
+      }
+    : styles.cartRightColumn;
+
+  const mobileCartControlsStyle: React.CSSProperties = isMobile
+    ? {
+        display: "grid",
+        gridTemplateColumns: "1fr 80px 1fr",
+        gap: 8,
+        alignItems: "center",
+        width: "100%",
+      }
+    : styles.cartQtyWeight;
+
   return (
     <div style={styles.page}>
       {toast && (
@@ -902,6 +948,17 @@ export default function App() {
             </button>
           </div>
         </div>
+      )}
+
+      {tab === "catalog" && cartCount > 0 && (
+        <button
+          style={styles.floatingCartBtn}
+          onClick={() => setTab("cart")}
+          aria-label="Открыть корзину"
+        >
+          <span style={styles.floatingCartIcon}>🛒</span>
+          <span style={styles.floatingCartCount}>{cartCount}</span>
+        </button>
       )}
 
       <div style={styles.container}>
@@ -1058,7 +1115,7 @@ export default function App() {
                         draftValue !== undefined ? draftValue : String(it.qty);
 
                       return (
-                        <div key={it.product.id} style={styles.cartRow2}>
+                        <div key={it.product.id} style={mobileCartRowStyle}>
                           <div style={styles.cartLeft2}>
                             <div style={styles.cartName2} title={it.product.name}>
                               {it.product.name}
@@ -1071,12 +1128,17 @@ export default function App() {
                             </div>
                           </div>
 
-                          <div style={styles.cartRightColumn}>
-                            <div style={styles.cartSum2}>
+                          <div style={mobileCartRightStyle}>
+                            <div
+                              style={{
+                                ...styles.cartSum2,
+                                ...(isMobile ? { textAlign: "left" } : {}),
+                              }}
+                            >
                               {money(calcLineSum(product, it.qty))} ₽
                             </div>
 
-                            <div style={styles.cartQtyWeight}>
+                            <div style={mobileCartControlsStyle}>
                               <button
                                 style={styles.qtyBtnWide}
                                 onClick={() => decreaseQty(product)}
@@ -1102,7 +1164,12 @@ export default function App() {
                               </button>
                             </div>
 
-                            <div style={styles.qtyHint}>
+                            <div
+                              style={{
+                                ...styles.qtyHint,
+                                ...(isMobile ? { textAlign: "left" } : {}),
+                              }}
+                            >
                               {mode === "weight"
                                 ? `Мин. ${getQtyLabel(product, getMinQty(product))}`
                                 : `Мин. ${getMinQty(product)} шт`}
@@ -1342,6 +1409,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily:
       '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif',
     padding: 12,
+    paddingBottom: 96,
   },
 
   container: {
@@ -1746,12 +1814,14 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 800,
     lineHeight: 1.3,
     marginBottom: 4,
+    wordBreak: "break-word",
   },
 
   cartMeta2: {
     color: "#6f665d",
     fontSize: 14,
     marginTop: 2,
+    wordBreak: "break-word",
   },
 
   cartRightColumn: {
@@ -1943,5 +2013,47 @@ const styles: Record<string, React.CSSProperties> = {
     maxHeight: "calc(90vh - 24px)",
     borderRadius: 12,
     objectFit: "contain",
+  },
+
+  floatingCartBtn: {
+    position: "fixed",
+    right: 16,
+    bottom: 20,
+    zIndex: 2600,
+    border: "none",
+    background: "#8a5a36",
+    color: "#fff",
+    width: 62,
+    height: 62,
+    borderRadius: "999px",
+    boxShadow: "0 10px 26px rgba(0,0,0,0.22)",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  floatingCartIcon: {
+    fontSize: 24,
+    lineHeight: 1,
+  },
+
+  floatingCartCount: {
+    position: "absolute",
+    top: -4,
+    right: -2,
+    minWidth: 24,
+    height: 24,
+    borderRadius: 999,
+    background: "#d56d1f",
+    color: "#fff",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 12,
+    fontWeight: 900,
+    padding: "0 6px",
+    boxSizing: "border-box",
+    border: "2px solid #f7f4ef",
   },
 };
