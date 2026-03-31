@@ -17,6 +17,9 @@ type Product = {
   sort: number;
   description?: string;
   image?: string;
+  sellMode?: string;   // weight | piece
+  minQty?: number;     // grams or pieces
+  stepQty?: number;    // grams or pieces
 };
 
 type CartItem = {
