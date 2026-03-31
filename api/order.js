@@ -7,12 +7,12 @@ export default async function handler(req, res) {
       res.status(500).json({ error: "Missing GS_API_URL env var" });
       return;
     }
+
     if (!GS_API_TOKEN) {
       res.status(500).json({ error: "Missing GS_API_TOKEN env var" });
       return;
     }
 
-    // CORS (на всякий случай)
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "POST,OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -27,17 +27,16 @@ export default async function handler(req, res) {
       return;
     }
 
-    // В Vercel body обычно уже распаршен, но подстрахуемся
     const body =
-      typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
+      typeof req.body === "string"
+        ? JSON.parse(req.body || "{}")
+        : (req.body || {});
 
-    // Добавляем токен на сервере (чтобы не светить его в браузере)
     body.token = GS_API_TOKEN;
 
     const r = await fetch(`${GS_API_URL}?action=order`, {
       method: "POST",
       headers: {
-        // Apps Script лучше принимает text/plain
         "Content-Type": "text/plain;charset=UTF-8",
         Accept: "application/json",
       },
