@@ -1,2 +1,4 @@
-export const API_URL = "https://script.google.com/macros/s/AKfycbzndyiRAXnG7xw9N6GjyXix_FXd3RFH4_nZ859rpqBgNMvHgBB0TZ7vhXR4s0AsXO7BrQ/exec";
-export const API_TOKEN = "Kjhytccb18@";
+export const API_PRODUCTS_URL = "/api/products";
+export const API_ORDER_URL = "/api/order";
+export const API_ORDERS_URL = "/api/orders";
+export const API_CANCEL_URL = "/api/cancel-order";
