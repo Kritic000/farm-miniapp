@@ -800,6 +800,13 @@ export default function App() {
             ? `Мин. ${getMinQty(product)} г, шаг ${getStepQty(product)} г`
             : `Мин. ${getMinQty(product)} шт, шаг ${getStepQty(product)} шт`}
         </div>
+
+        <button
+          style={styles.removeBtnText}
+          onClick={() => removeFromCart(product.id)}
+        >
+          Удалить
+        </button>
       </div>
     );
   }
