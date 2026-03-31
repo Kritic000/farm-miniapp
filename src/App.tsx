@@ -1,5 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { API_PRODUCTS_URL, API_ORDER_URL, API_ORDERS_URL, API_CANCEL_URL } from "./config";
+import {
+  API_PRODUCTS_URL,
+  API_ORDER_URL,
+  API_ORDERS_URL,
+  API_CANCEL_URL,
+} from "./config";
 
 declare global {
   interface Window {
@@ -17,9 +22,9 @@ type Product = {
   sort: number;
   description?: string;
   image?: string;
-  sellMode?: string;   // weight | piece
-  minQty?: number;     // grams or pieces
-  stepQty?: number;    // grams or pieces
+  sellMode?: "weight" | "piece" | string;
+  minQty?: number;
+  stepQty?: number;
 };
 
 type CartItem = {
@@ -58,7 +63,7 @@ type Order = {
 
 type Toast = { type: "error" | "success" | "info"; text: string } | null;
 
-const PRODUCTS_CACHE_KEY = "farm_products_cache_v2";
+const PRODUCTS_CACHE_KEY = "farm_products_cache_v3";
 const PRODUCTS_CACHE_TTL_MS = 5 * 60 * 1000;
 const LAST_PHONE_KEY = "farm_last_phone_v1";
 const PENDING_ORDER_ID_KEY = "farm_pending_order_id_v1";
@@ -87,7 +92,11 @@ function getTgUser(): TgUser | null {
 }
 
 function money(n: number) {
-  return new Intl.NumberFormat("ru-RU").format(Math.round(n));
+  const value = Number(n) || 0;
+  return new Intl.NumberFormat("ru-RU", {
+    minimumFractionDigits: value % 1 === 0 ? 0 : 1,
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
 function normalizePhone(p: string) {
@@ -262,6 +271,55 @@ function trackOrderCreated() {
   }
 }
 
+function getSellMode(product: Product): "weight" | "piece" {
+  return String(product.sellMode || "").toLowerCase() === "weight"
+    ? "weight"
+    : "piece";
+}
+
+function getMinQty(product: Product) {
+  const raw = Number(product.minQty);
+  if (Number.isFinite(raw) && raw > 0) return raw;
+  return getSellMode(product) === "weight" ? 300 : 1;
+}
+
+function getStepQty(product: Product) {
+  const raw = Number(product.stepQty);
+  if (Number.isFinite(raw) && raw > 0) return raw;
+  return getSellMode(product) === "weight" ? 50 : 1;
+}
+
+function getQtyLabel(product: Product, qty: number) {
+  return getSellMode(product) === "weight" ? `${qty} г` : `${qty} шт`;
+}
+
+function getDisplayUnit(product: Product) {
+  return getSellMode(product) === "weight" ? "г" : "шт";
+}
+
+function normalizeQtyForProduct(product: Product, rawQty: number) {
+  const mode = getSellMode(product);
+  const minQty = getMinQty(product);
+  const stepQty = getStepQty(product);
+
+  if (!Number.isFinite(rawQty)) return minQty;
+
+  if (mode === "weight") {
+    const rounded = Math.round(rawQty / stepQty) * stepQty;
+    return Math.max(minQty, rounded);
+  }
+
+  const rounded = Math.round(rawQty / stepQty) * stepQty;
+  return Math.max(minQty, rounded);
+}
+
+function calcLineSum(product: Product, qty: number) {
+  if (getSellMode(product) === "weight") {
+    return (qty / 100) * product.price;
+  }
+  return qty * product.price;
+}
+
 export default function App() {
   const [loading, setLoading] = useState(true);
   const [loadingHint, setLoadingHint] = useState<string>("");
@@ -275,6 +333,7 @@ export default function App() {
   );
 
   const [cart, setCart] = useState<Record<string, CartItem>>({});
+  const [qtyDrafts, setQtyDrafts] = useState<Record<string, string>>({});
 
   const [address, setAddress] = useState("");
   const [comment, setComment] = useState("");
@@ -426,13 +485,10 @@ export default function App() {
 
   const cartItems = useMemo(() => Object.values(cart), [cart]);
 
-  const cartCount = useMemo(
-    () => cartItems.reduce((s, it) => s + it.qty, 0),
-    [cartItems]
-  );
+  const cartCount = useMemo(() => cartItems.length, [cartItems]);
 
   const total = useMemo(
-    () => cartItems.reduce((s, it) => s + it.qty * it.product.price, 0),
+    () => cartItems.reduce((s, it) => s + calcLineSum(it.product, it.qty), 0),
     [cartItems]
   );
 
@@ -443,27 +499,86 @@ export default function App() {
 
   const grandTotal = useMemo(() => total + delivery, [total, delivery]);
 
+  function qtyOf(productId: string) {
+    return cart[productId]?.qty || 0;
+  }
+
+  function clearQtyDraft(productId: string) {
+    setQtyDrafts((prev) => {
+      const next = { ...prev };
+      delete next[productId];
+      return next;
+    });
+  }
+
   function addToCart(p: Product) {
+    const initialQty = getMinQty(p);
+
     setCart((prev) => {
       const next = { ...prev };
       const cur = next[p.id];
-      next[p.id] = { product: p, qty: (cur?.qty || 0) + 1 };
+      next[p.id] = {
+        product: p,
+        qty: cur ? cur.qty : initialQty,
+      };
       return next;
     });
+
+    clearQtyDraft(p.id);
     setToast({ type: "info", text: "Добавлено в корзину" });
   }
 
-  function setQty(productId: string, qty: number) {
+  function removeFromCart(productId: string) {
     setCart((prev) => {
       const next = { ...prev };
-      if (qty <= 0) delete next[productId];
-      else next[productId] = { ...next[productId], qty };
+      delete next[productId];
       return next;
     });
+    clearQtyDraft(productId);
   }
 
-  function qtyOf(productId: string) {
-    return cart[productId]?.qty || 0;
+  function setQty(product: Product, rawQty: number) {
+    const qty = normalizeQtyForProduct(product, rawQty);
+
+    setCart((prev) => {
+      const next = { ...prev };
+      next[product.id] = { product, qty };
+      return next;
+    });
+
+    clearQtyDraft(product.id);
+  }
+
+  function increaseQty(product: Product) {
+    const current = qtyOf(product.id) || getMinQty(product);
+    setQty(product, current + getStepQty(product));
+  }
+
+  function decreaseQty(product: Product) {
+    const current = qtyOf(product.id) || getMinQty(product);
+    const minQty = getMinQty(product);
+    const stepQty = getStepQty(product);
+    const next = current - stepQty;
+    setQty(product, next < minQty ? minQty : next);
+  }
+
+  function handleDraftChange(productId: string, value: string) {
+    const digits = value.replace(/[^\d]/g, "");
+    setQtyDrafts((prev) => ({ ...prev, [productId]: digits }));
+  }
+
+  function commitDraft(product: Product) {
+    const currentQty = qtyOf(product.id) || getMinQty(product);
+    const raw = qtyDrafts[product.id];
+
+    if (!raw) {
+      clearQtyDraft(product.id);
+      setQty(product, currentQty);
+      return;
+    }
+
+    const parsed = Number(raw);
+    setQty(product, parsed);
   }
 
   function validateCheckout(): string | null {
@@ -489,10 +604,10 @@ export default function App() {
     const items = cartItems.map((it) => ({
       id: it.product.id,
       name: it.product.name,
-      unit: it.product.unit,
+      unit: getDisplayUnit(it.product),
       price: it.product.price,
       qty: it.qty,
-      sum: it.qty * it.product.price,
+      sum: Number(calcLineSum(it.product, it.qty).toFixed(2)),
     }));
 
     const payload = {
@@ -501,9 +616,9 @@ export default function App() {
       address,
       comment,
       items,
-      total,
-      delivery,
-      grandTotal,
+      total: Number(total.toFixed(2)),
+      delivery: Number(delivery.toFixed(2)),
+      grandTotal: Number(grandTotal.toFixed(2)),
       orderId,
       utmSource,
       utmMedium,
@@ -545,6 +660,7 @@ export default function App() {
 
       clearPendingOrderId();
       setCart({});
+      setQtyDrafts({});
       setAddress("");
       setComment("");
       setCustomerName("");
@@ -644,6 +760,49 @@ export default function App() {
     if (tab !== "orders") return;
     loadMyOrders();
   }, [tab]);
+
+  function renderQtyControls(product: Product) {
+    const q = qtyOf(product.id);
+    const mode = getSellMode(product);
+    const draftValue = qtyDrafts[product.id];
+    const displayValue = draftValue !== undefined ? draftValue : String(q);
+
+    if (q === 0) {
+      return (
+        <button style={styles.buyBtn} onClick={() => addToCart(product)}>
+          {mode === "weight" ? `Выбрать от ${getMinQty(product)} г` : "В корзину"}
+        </button>
+      );
+    }
+
+    return (
+      <div style={styles.qtyBlock}>
+        <div style={styles.qtyTopLine}>
+          <button style={styles.qtyBtnWide} onClick={() => decreaseQty(product)}>
+            −{mode === "weight" ? `${getStepQty(product)} г` : "1"}
+          </button>
+
+          <input
+            style={styles.qtyInput}
+            value={displayValue}
+            onChange={(e) => handleDraftChange(product.id, e.target.value)}
+            onBlur={() => commitDraft(product)}
+            inputMode="numeric"
+          />
+
+          <button style={styles.qtyBtnWide} onClick={() => increaseQty(product)}>
+            +{mode === "weight" ? `${getStepQty(product)} г` : "1"}
+          </button>
+        </div>
+
+        <div style={styles.qtyHint}>
+          {mode === "weight"
+            ? `Мин. ${getMinQty(product)} г, шаг ${getStepQty(product)} г`
+            : `Мин. ${getMinQty(product)} шт, шаг ${getStepQty(product)} шт`}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.page}>
@@ -760,9 +919,7 @@ export default function App() {
           <div style={styles.infoMuted}>{loadingHint}</div>
         )}
         {error && (
-          <div style={{ ...styles.info, color: styles.colors.danger }}>
-            {error}
-          </div>
+          <div style={{ ...styles.info, color: "#c62828" }}>{error}</div>
         )}
 
         {!loading && !error && (
@@ -791,6 +948,7 @@ export default function App() {
 
                 <div style={styles.list}>
                   {filteredProducts.map((p) => {
+                    const mode = getSellMode(p);
                     const q = qtyOf(p.id);
 
                     return (
@@ -828,30 +986,19 @@ export default function App() {
                             <span style={styles.unit}> / {p.unit}</span>
                           </div>
 
-                          {q === 0 ? (
-                            <button
-                              style={styles.buyBtn}
-                              onClick={() => addToCart(p)}
-                            >
-                              В корзину
-                            </button>
-                          ) : (
-                            <div style={styles.qtyInline}>
-                              <button
-                                style={styles.qtyBtn}
-                                onClick={() => setQty(p.id, q - 1)}
-                              >
-                                −
-                              </button>
-                              <div style={styles.qtyNum}>{q}</div>
-                              <button
-                                style={styles.qtyBtn}
-                                onClick={() => setQty(p.id, q + 1)}
-                              >
-                                +
-                              </button>
+                          {mode === "weight" && (
+                            <div style={styles.weightBadge}>
+                              От {getMinQty(p)} г, шаг {getStepQty(p)} г
                             </div>
                           )}
+
+                          {q > 0 && (
+                            <div style={styles.currentQtyLabel}>
+                              В корзине: {getQtyLabel(p, q)}
+                            </div>
+                          )}
+
+                          {renderQtyControls(p)}
                         </div>
                       </div>
                     );
@@ -866,48 +1013,74 @@ export default function App() {
                   <div style={styles.info}>Корзина пустая</div>
                 ) : (
                   <>
-                    {cartItems.map((it) => (
-                      <div key={it.product.id} style={styles.cartRow2}>
-                        <div style={styles.cartLeft2}>
-                          <div style={styles.cartName2} title={it.product.name}>
-                            {it.product.name}
+                    {cartItems.map((it) => {
+                      const product = it.product;
+                      const mode = getSellMode(product);
+                      const draftValue = qtyDrafts[product.id];
+                      const displayValue =
+                        draftValue !== undefined ? draftValue : String(it.qty);
+
+                      return (
+                        <div key={it.product.id} style={styles.cartRow2}>
+                          <div style={styles.cartLeft2}>
+                            <div style={styles.cartName2} title={it.product.name}>
+                              {it.product.name}
+                            </div>
+                            <div style={styles.cartMeta2}>
+                              {money(it.product.price)} ₽ / {it.product.unit}
+                            </div>
+                            <div style={styles.cartMeta2}>
+                              Выбрано: {getQtyLabel(product, it.qty)}
+                            </div>
                           </div>
-                          <div style={styles.cartMeta2}>
-                            {money(it.product.price)} ₽ / {it.product.unit}
+
+                          <div style={styles.cartRightColumn}>
+                            <div style={styles.cartSum2}>
+                              {money(calcLineSum(product, it.qty))} ₽
+                            </div>
+
+                            <div style={styles.cartQtyWeight}>
+                              <button
+                                style={styles.qtyBtnWide}
+                                onClick={() => decreaseQty(product)}
+                              >
+                                −{mode === "weight" ? `${getStepQty(product)} г` : "1"}
+                              </button>
+
+                              <input
+                                style={styles.qtyInput}
+                                value={displayValue}
+                                onChange={(e) =>
+                                  handleDraftChange(product.id, e.target.value)
+                                }
+                                onBlur={() => commitDraft(product)}
+                                inputMode="numeric"
+                              />
+
+                              <button
+                                style={styles.qtyBtnWide}
+                                onClick={() => increaseQty(product)}
+                              >
+                                +{mode === "weight" ? `${getStepQty(product)} г` : "1"}
+                              </button>
+                            </div>
+
+                            <div style={styles.qtyHint}>
+                              {mode === "weight"
+                                ? `Мин. ${getMinQty(product)} г`
+                                : `Мин. ${getMinQty(product)} шт`}
+                            </div>
+
+                            <button
+                              style={styles.removeBtnText}
+                              onClick={() => removeFromCart(product.id)}
+                            >
+                              Удалить
+                            </button>
                           </div>
                         </div>
-
-                        <div style={styles.cartRight2}>
-                          <div style={styles.cartSum2}>
-                            {money(it.qty * it.product.price)} ₽
-                          </div>
-
-                          <div style={styles.cartQty2}>
-                            <button
-                              style={styles.qtyBtn2}
-                              onClick={() => setQty(it.product.id, it.qty - 1)}
-                            >
-                              −
-                            </button>
-                            <div style={styles.qtyNum2}>{it.qty}</div>
-                            <button
-                              style={styles.qtyBtn2}
-                              onClick={() => setQty(it.product.id, it.qty + 1)}
-                            >
-                              +
-                            </button>
-                          </div>
-
-                          <button
-                            style={styles.removeBtn2}
-                            onClick={() => setQty(it.product.id, 0)}
-                            title="Удалить"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
 
                     <div style={styles.totalBlock}>
                       <div style={styles.totalRow}>
@@ -953,7 +1126,7 @@ export default function App() {
                 <div style={styles.h2}>Оформление</div>
 
                 <label style={styles.label}>
-                  Имя <span style={{ color: styles.colors.danger }}>*</span>
+                  Имя <span style={{ color: "#c62828" }}>*</span>
                 </label>
                 <input
                   style={styles.input}
@@ -964,7 +1137,7 @@ export default function App() {
                 />
 
                 <label style={styles.label}>
-                  Телефон <span style={{ color: styles.colors.danger }}>*</span>
+                  Телефон <span style={{ color: "#c62828" }}>*</span>
                 </label>
                 <input
                   style={styles.input}
@@ -976,7 +1149,7 @@ export default function App() {
                 />
 
                 <label style={styles.label}>
-                  Адрес <span style={{ color: styles.colors.danger }}>*</span>
+                  Адрес <span style={{ color: "#c62828" }}>*</span>
                 </label>
                 <textarea
                   style={styles.textarea}
@@ -1051,7 +1224,7 @@ export default function App() {
                 </button>
 
                 {ordersError && (
-                  <div style={{ ...styles.info, color: styles.colors.danger }}>
+                  <div style={{ ...styles.info, color: "#c62828" }}>
                     {ordersError}
                   </div>
                 )}
@@ -1125,25 +1298,6 @@ export default function App() {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  colors: {
-    bg: "#f7f4ef",
-    panel: "#ffffff",
-    text: "#2d251d",
-    subtext: "#6f665d",
-    border: "#e7ddd2",
-    accent: "#8a5a36",
-    accentDark: "#6f4528",
-    accentSoft: "#f3e7da",
-    success: "#2e7d32",
-    successBg: "#e8f5e9",
-    danger: "#c62828",
-    dangerBg: "#fdeaea",
-    info: "#1565c0",
-    infoBg: "#e8f1fd",
-    chip: "#efe5d8",
-    chipActive: "#8a5a36",
-  },
-
   page: {
     minHeight: "100vh",
     background: "#f7f4ef",
@@ -1154,7 +1308,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   container: {
-    maxWidth: 980,
+    maxWidth: 1120,
     margin: "0 auto",
   },
 
@@ -1256,8 +1410,8 @@ const styles: Record<string, React.CSSProperties> = {
 
   list: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
-    gap: 14,
+    gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+    gap: 16,
   },
 
   card: {
@@ -1272,7 +1426,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   cardImg: {
     width: "100%",
-    aspectRatio: "1 / 1",
+    aspectRatio: "1 / 0.9",
     objectFit: "cover",
     background: "#f5efe8",
     cursor: "zoom-in",
@@ -1280,7 +1434,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   cardImgPlaceholder: {
     width: "100%",
-    aspectRatio: "1 / 1",
+    aspectRatio: "1 / 0.9",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -1307,7 +1461,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 14,
     color: "#6f665d",
     lineHeight: 1.4,
-    minHeight: 38,
+    minHeight: 56,
   },
 
   cardMeta: {
@@ -1327,6 +1481,23 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 14,
   },
 
+  weightBadge: {
+    display: "inline-block",
+    alignSelf: "flex-start",
+    background: "#f5eee4",
+    color: "#7c5431",
+    padding: "6px 10px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 800,
+  },
+
+  currentQtyLabel: {
+    fontSize: 13,
+    color: "#6f665d",
+    fontWeight: 700,
+  },
+
   buyBtn: {
     marginTop: "auto",
     border: "none",
@@ -1338,31 +1509,48 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 800,
   },
 
-  qtyInline: {
+  qtyBlock: {
     marginTop: "auto",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
+    display: "grid",
+    gap: 8,
   },
 
-  qtyBtn: {
+  qtyTopLine: {
+    display: "grid",
+    gridTemplateColumns: "1fr 80px 1fr",
+    gap: 8,
+    alignItems: "center",
+  },
+
+  qtyBtnWide: {
     border: "1px solid #e7ddd2",
     background: "#fff",
     color: "#2d251d",
-    width: 38,
-    height: 38,
+    minHeight: 42,
     borderRadius: 10,
     cursor: "pointer",
-    fontSize: 20,
+    fontSize: 14,
     fontWeight: 800,
+    padding: "0 10px",
   },
 
-  qtyNum: {
-    minWidth: 34,
+  qtyInput: {
+    width: "100%",
+    boxSizing: "border-box",
+    border: "1px solid #e7ddd2",
+    borderRadius: 10,
+    minHeight: 42,
+    padding: "0 10px",
     textAlign: "center",
+    fontSize: 16,
     fontWeight: 800,
-    fontSize: 18,
+    outline: "none",
+  },
+
+  qtyHint: {
+    fontSize: 12,
+    color: "#7b736a",
+    textAlign: "center",
   },
 
   panel: {
@@ -1508,8 +1696,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: "grid",
     gridTemplateColumns: "1fr auto",
     gap: 12,
-    alignItems: "center",
-    padding: "12px 0",
+    alignItems: "start",
+    padding: "14px 0",
     borderBottom: "1px solid #f0e7dc",
   },
 
@@ -1526,55 +1714,34 @@ const styles: Record<string, React.CSSProperties> = {
   cartMeta2: {
     color: "#6f665d",
     fontSize: 14,
+    marginTop: 2,
   },
 
-  cartRight2: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    flexWrap: "wrap",
-    justifyContent: "flex-end",
+  cartRightColumn: {
+    display: "grid",
+    gap: 8,
+    minWidth: 320,
   },
 
   cartSum2: {
-    fontWeight: 800,
-    minWidth: 100,
+    fontWeight: 900,
     textAlign: "right",
   },
 
-  cartQty2: {
-    display: "flex",
-    alignItems: "center",
+  cartQtyWeight: {
+    display: "grid",
+    gridTemplateColumns: "1fr 80px 1fr",
     gap: 8,
+    alignItems: "center",
   },
 
-  qtyBtn2: {
-    border: "1px solid #e7ddd2",
-    background: "#fff",
-    color: "#2d251d",
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    cursor: "pointer",
-    fontSize: 18,
-    fontWeight: 800,
-  },
-
-  qtyNum2: {
-    minWidth: 28,
-    textAlign: "center",
-    fontWeight: 800,
-  },
-
-  removeBtn2: {
-    border: "1px solid #f2caca",
+  removeBtnText: {
+    border: "1px solid #f3cdcd",
     background: "#fff5f5",
     color: "#c62828",
-    width: 34,
-    height: 34,
     borderRadius: 10,
+    padding: "10px 12px",
     cursor: "pointer",
-    fontSize: 20,
     fontWeight: 800,
   },
 
