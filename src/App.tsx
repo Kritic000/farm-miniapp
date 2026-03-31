@@ -290,11 +290,38 @@ function getStepQty(product: Product) {
 }
 
 function getQtyLabel(product: Product, qty: number) {
-  return getSellMode(product) === "weight" ? `${qty} г` : `${qty} шт`;
+  if (getSellMode(product) !== "weight") {
+    return `${qty} шт`;
+  }
+
+  if (qty >= 1000) {
+    const kg = qty / 1000;
+    const formatted = Number.isInteger(kg)
+      ? String(kg)
+      : String(kg).replace(".", ",");
+    return `${formatted} кг`;
+  }
+
+  return `${qty} г`;
 }
 
 function getDisplayUnit(product: Product) {
   return getSellMode(product) === "weight" ? "г" : "шт";
+}
+
+function getWeightPriceBase(product: Product) {
+  const unit = String(product.unit || "").trim().toLowerCase();
+
+  if (
+    unit.includes("0,1 кг") ||
+    unit.includes("0.1 кг") ||
+    unit.includes("100 г") ||
+    unit.includes("100г")
+  ) {
+    return 100;
+  }
+
+  return 1000;
 }
 
 function normalizeQtyForProduct(product: Product, rawQty: number) {
@@ -315,7 +342,8 @@ function normalizeQtyForProduct(product: Product, rawQty: number) {
 
 function calcLineSum(product: Product, qty: number) {
   if (getSellMode(product) === "weight") {
-    return (qty / 100) * product.price;
+    const base = getWeightPriceBase(product);
+    return (qty / base) * product.price;
   }
   return qty * product.price;
 }
@@ -797,7 +825,9 @@ export default function App() {
 
         <div style={styles.qtyHint}>
           {mode === "weight"
-            ? `Мин. ${getMinQty(product)} г, шаг ${getStepQty(product)} г`
+            ? `Мин. ${getQtyLabel(product, getMinQty(product))}, шаг ${getStepQty(
+                product
+              )} г`
             : `Мин. ${getMinQty(product)} шт, шаг ${getStepQty(product)} шт`}
         </div>
 
@@ -995,7 +1025,7 @@ export default function App() {
 
                           {mode === "weight" && (
                             <div style={styles.weightBadge}>
-                              От {getMinQty(p)} г, шаг {getStepQty(p)} г
+                              От {getQtyLabel(p, getMinQty(p))}, шаг {getStepQty(p)} г
                             </div>
                           )}
 
@@ -1074,7 +1104,7 @@ export default function App() {
 
                             <div style={styles.qtyHint}>
                               {mode === "weight"
-                                ? `Мин. ${getMinQty(product)} г`
+                                ? `Мин. ${getQtyLabel(product, getMinQty(product))}`
                                 : `Мин. ${getMinQty(product)} шт`}
                             </div>
 
