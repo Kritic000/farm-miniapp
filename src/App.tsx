@@ -1,10 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  API_PRODUCTS_URL,
-  API_ORDER_URL,
-  API_ORDERS_URL,
-  API_CANCEL_URL,
-} from "./config";
+import { API_URL } from "./config";
 
 declare global {
   interface Window {
@@ -17,14 +12,23 @@ type Product = {
   id: string;
   category: string;
   name: string;
-  unit: string;
-  price: number;
-  sort: number;
   description?: string;
   image?: string;
+  unit: string;
+  price: number;
   sellMode?: "weight" | "piece" | string;
   minQty?: number;
   stepQty?: number;
+  active?: boolean;
+  sort: number;
+
+  groupId?: string;
+  variantName?: string;
+  shortName?: string;
+  badge?: string;
+  storageType?: string;
+  storageDays?: string;
+  composition?: string;
 };
 
 type CartItem = {
@@ -63,6 +67,19 @@ type Order = {
 
 type Toast = { type: "error" | "success" | "info"; text: string } | null;
 
+type ProductGroup = {
+  key: string;
+  category: string;
+  title: string;
+  subtitle: string;
+  badge: string;
+  storageType: string;
+  storageDays: string;
+  variants: Product[];
+  minPrice: number;
+  sort: number;
+};
+
 const PRODUCTS_CACHE_KEY = "farm_products_cache_v3";
 const PRODUCTS_CACHE_TTL_MS = 5 * 60 * 1000;
 const LAST_PHONE_KEY = "farm_last_phone_v1";
@@ -92,11 +109,7 @@ function getTgUser(): TgUser | null {
 }
 
 function money(n: number) {
-  const value = Number(n) || 0;
-  return new Intl.NumberFormat("ru-RU", {
-    minimumFractionDigits: value % 1 === 0 ? 0 : 1,
-    maximumFractionDigits: 2,
-  }).format(value);
+  return new Intl.NumberFormat("ru-RU").format(Math.round(n));
 }
 
 function normalizePhone(p: string) {
@@ -271,100 +284,75 @@ function trackOrderCreated() {
   }
 }
 
-function getSellMode(product: Product): "weight" | "piece" {
-  return String(product.sellMode || "").toLowerCase() === "weight"
-    ? "weight"
-    : "piece";
-}
+function buildProductGroups(products: Product[]): ProductGroup[] {
+  const grouped = new Map<string, Product[]>();
 
-function getMinQty(product: Product) {
-  const raw = Number(product.minQty);
-  if (Number.isFinite(raw) && raw > 0) return raw;
-  return getSellMode(product) === "weight" ? 300 : 1;
-}
-
-function getStepQty(product: Product) {
-  const raw = Number(product.stepQty);
-  if (Number.isFinite(raw) && raw > 0) return raw;
-  return getSellMode(product) === "weight" ? 50 : 1;
-}
-
-function formatKg(kg: number) {
-  return Number.isInteger(kg) ? String(kg) : String(kg).replace(".", ",");
-}
-
-function getQtyLabel(product: Product, qty: number) {
-  if (getSellMode(product) !== "weight") {
-    return `${qty} шт`;
+  for (const product of products) {
+    const key = String(product.groupId || product.id || "").trim() || product.id;
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key)!.push(product);
   }
 
-  if (qty >= 1000) {
-    return `${formatKg(qty / 1000)} кг`;
+  const result: ProductGroup[] = [];
+
+  for (const [key, variantsRaw] of grouped.entries()) {
+    const variants = [...variantsRaw].sort(
+      (a, b) => (Number(a.sort) || 0) - (Number(b.sort) || 0)
+    );
+
+    const first = variants[0];
+    const minPrice = Math.min(...variants.map((v) => Number(v.price) || 0));
+
+    result.push({
+      key,
+      category: String(first.category || "").trim(),
+      title:
+        String(first.shortName || "").trim() ||
+        String(first.name || "").trim() ||
+        "Товар",
+      subtitle: String(first.description || "").trim(),
+      badge: String(first.badge || "").trim(),
+      storageType: String(first.storageType || "").trim(),
+      storageDays: String(first.storageDays || "").trim(),
+      variants,
+      minPrice,
+      sort: Number(first.sort) || 0,
+    });
   }
 
-  return `${qty} г`;
+  return result.sort(
+    (a, b) =>
+      a.category.localeCompare(b.category) ||
+      a.sort - b.sort ||
+      a.title.localeCompare(b.title)
+  );
 }
 
-function getDisplayUnit(product: Product) {
-  return getSellMode(product) === "weight" ? "г" : "шт";
+function getVariantLabel(v: Product) {
+  const parts = [];
+  const variantName = String(v.variantName || "").trim();
+  const unit = String(v.unit || "").trim();
+
+  if (variantName) parts.push(variantName);
+  if (unit) parts.push(unit);
+
+  return parts.join(" · ") || String(v.name || "").trim();
 }
 
-function getWeightPriceBase(product: Product) {
-  const unit = String(product.unit || "").trim().toLowerCase();
-
-  if (
-    unit.includes("0,1 кг") ||
-    unit.includes("0.1 кг") ||
-    unit.includes("100 г") ||
-    unit.includes("100г")
-  ) {
-    return 100;
+function getDisplayPrice(group: ProductGroup, selected: Product) {
+  if (group.variants.length > 1) {
+    return `от ${money(group.minPrice)} ₽`;
   }
-
-  return 1000;
+  return `${money(selected.price)} ₽ / ${selected.unit}`;
 }
 
-function normalizeQtyForProduct(product: Product, rawQty: number) {
-  const mode = getSellMode(product);
-  const minQty = getMinQty(product);
-  const stepQty = getStepQty(product);
-
-  if (!Number.isFinite(rawQty)) return minQty;
-
-  if (mode === "weight") {
-    const rounded = Math.round(rawQty / stepQty) * stepQty;
-    return Math.max(minQty, rounded);
-  }
-
-  const rounded = Math.round(rawQty / stepQty) * stepQty;
-  return Math.max(minQty, rounded);
-}
-
-function calcLineSum(product: Product, qty: number) {
-  if (getSellMode(product) === "weight") {
-    const base = getWeightPriceBase(product);
-    return (qty / base) * product.price;
-  }
-  return qty * product.price;
-}
-
-function useIsMobile(breakpoint = 720) {
-  const [isMobile, setIsMobile] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return window.innerWidth <= breakpoint;
-  });
-
-  useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth <= breakpoint);
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, [breakpoint]);
-
-  return isMobile;
+function getDisplayButtonText(group: ProductGroup) {
+  if (group.variants.length > 1) return "Добавить выбранный вариант";
+  return "Добавить в корзину";
 }
 
 export default function App() {
-  const isMobile = useIsMobile();
+  const API_TOKEN = "Kjhytccb18@";
 
   const [loading, setLoading] = useState(true);
   const [loadingHint, setLoadingHint] = useState<string>("");
@@ -378,7 +366,6 @@ export default function App() {
   );
 
   const [cart, setCart] = useState<Record<string, CartItem>>({});
-  const [qtyDrafts, setQtyDrafts] = useState<Record<string, string>>({});
 
   const [address, setAddress] = useState("");
   const [comment, setComment] = useState("");
@@ -396,6 +383,10 @@ export default function App() {
 
   const [cancelOrderId, setCancelOrderId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState("");
+
+  const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>(
+    {}
+  );
 
   useEffect(() => {
     const tg = getTelegramWebApp();
@@ -445,7 +436,7 @@ export default function App() {
           setLoadingHint("Показан сохранённый ассортимент. Обновляем данные…");
         }
 
-        const url = `${API_PRODUCTS_URL}?nocache=1&t=${Date.now()}`;
+        const url = `${API_URL}?action=products&nocache=1&t=${Date.now()}`;
         const res = await fetchWithTimeout(url, {
           method: "GET",
           timeoutMs: 35000,
@@ -458,6 +449,13 @@ export default function App() {
         const list: Product[] = (data.products || []).map((p: Product) => ({
           ...p,
           image: normalizeImagePath(p.image),
+          groupId: String((p as any).groupId || "").trim(),
+          variantName: String((p as any).variantName || "").trim(),
+          shortName: String((p as any).shortName || "").trim(),
+          badge: String((p as any).badge || "").trim(),
+          storageType: String((p as any).storageType || "").trim(),
+          storageDays: String((p as any).storageDays || "").trim(),
+          composition: String((p as any).composition || "").trim(),
         }));
 
         if (cancelled) return;
@@ -471,8 +469,9 @@ export default function App() {
       } catch (e: any) {
         if (cancelled) return;
 
-        if (cached) {
-          setProducts(cached.products);
+        const cachedProducts = loadProductsCache();
+        if (cachedProducts?.products?.length) {
+          setProducts(cachedProducts.products);
           setLoading(false);
           setError("");
           setLoadingHint(
@@ -497,18 +496,20 @@ export default function App() {
     };
   }, []);
 
+  const productGroups = useMemo(() => buildProductGroups(products), [products]);
+
   const categories = useMemo(() => {
     const set = new Set<string>();
 
-    products.forEach((p) => {
-      const cat = String(p.category || "").trim();
+    productGroups.forEach((g) => {
+      const cat = String(g.category || "").trim();
       if (!cat) return;
       if (cat.toLowerCase() === "акции") return;
       set.add(cat);
     });
 
     return ["Акции", "Все", ...Array.from(set)];
-  }, [products]);
+  }, [productGroups]);
 
   useEffect(() => {
     if (!categories.includes(activeCategory)) {
@@ -516,24 +517,27 @@ export default function App() {
     }
   }, [categories, activeCategory]);
 
-  const filteredProducts = useMemo(() => {
-    if (activeCategory === "Все") return products;
+  const filteredGroups = useMemo(() => {
+    if (activeCategory === "Все") return productGroups;
 
     if (activeCategory === "Акции") {
-      return products.filter(
-        (p) => String(p.category || "").trim().toLowerCase() === "акции"
+      return productGroups.filter(
+        (g) => String(g.category || "").trim().toLowerCase() === "акции"
       );
     }
 
-    return products.filter((p) => p.category === activeCategory);
-  }, [products, activeCategory]);
+    return productGroups.filter((g) => g.category === activeCategory);
+  }, [productGroups, activeCategory]);
 
   const cartItems = useMemo(() => Object.values(cart), [cart]);
 
-  const cartCount = useMemo(() => cartItems.length, [cartItems]);
+  const cartCount = useMemo(
+    () => cartItems.reduce((s, it) => s + it.qty, 0),
+    [cartItems]
+  );
 
   const total = useMemo(
-    () => cartItems.reduce((s, it) => s + calcLineSum(it.product, it.qty), 0),
+    () => cartItems.reduce((s, it) => s + it.qty * it.product.price, 0),
     [cartItems]
   );
 
@@ -544,86 +548,42 @@ export default function App() {
 
   const grandTotal = useMemo(() => total + delivery, [total, delivery]);
 
-  function qtyOf(productId: string) {
-    return cart[productId]?.qty || 0;
+  function getSelectedVariant(group: ProductGroup) {
+    const selectedId = selectedVariants[group.key];
+    return (
+      group.variants.find((v) => v.id === selectedId) ||
+      group.variants[0]
+    );
   }
 
-  function clearQtyDraft(productId: string) {
-    setQtyDrafts((prev) => {
-      const next = { ...prev };
-      delete next[productId];
-      return next;
-    });
+  function selectVariant(groupKey: string, productId: string) {
+    setSelectedVariants((prev) => ({
+      ...prev,
+      [groupKey]: productId,
+    }));
   }
 
-  function addToCart(p: Product) {
-    const initialQty = getMinQty(p);
-
+  function addToCart(product: Product) {
     setCart((prev) => {
       const next = { ...prev };
-      const cur = next[p.id];
-      next[p.id] = {
-        product: p,
-        qty: cur ? cur.qty : initialQty,
-      };
+      const cur = next[product.id];
+      next[product.id] = { product, qty: (cur?.qty || 0) + 1 };
       return next;
     });
-
-    clearQtyDraft(p.id);
     setToast({ type: "info", text: "Добавлено в корзину" });
   }
 
-  function removeFromCart(productId: string) {
+  function setQty(productId: string, qty: number) {
     setCart((prev) => {
       const next = { ...prev };
-      delete next[productId];
+      if (qty <= 0) delete next[productId];
+      else next[productId] = { ...next[productId], qty };
       return next;
     });
-    clearQtyDraft(productId);
   }
 
-  function setQty(product: Product, rawQty: number) {
-    const qty = normalizeQtyForProduct(product, rawQty);
-
-    setCart((prev) => {
-      const next = { ...prev };
-      next[product.id] = { product, qty };
-      return next;
-    });
-
-    clearQtyDraft(product.id);
-  }
-
-  function increaseQty(product: Product) {
-    const current = qtyOf(product.id) || getMinQty(product);
-    setQty(product, current + getStepQty(product));
-  }
-
-  function decreaseQty(product: Product) {
-    const current = qtyOf(product.id) || getMinQty(product);
-    const minQty = getMinQty(product);
-    const stepQty = getStepQty(product);
-    const next = current - stepQty;
-    setQty(product, next < minQty ? minQty : next);
-  }
-
-  function handleDraftChange(productId: string, value: string) {
-    const digits = value.replace(/[^\d]/g, "");
-    setQtyDrafts((prev) => ({ ...prev, [productId]: digits }));
-  }
-
-  function commitDraft(product: Product) {
-    const currentQty = qtyOf(product.id) || getMinQty(product);
-    const raw = qtyDrafts[product.id];
-
-    if (!raw) {
-      clearQtyDraft(product.id);
-      setQty(product, currentQty);
-      return;
-    }
-
-    const parsed = Number(raw);
-    setQty(product, parsed);
+  function qtyOf(productId: string) {
+    return cart[productId]?.qty || 0;
   }
 
   function validateCheckout(): string | null {
@@ -648,22 +608,25 @@ export default function App() {
 
     const items = cartItems.map((it) => ({
       id: it.product.id,
-      name: it.product.name,
-      unit: getDisplayUnit(it.product),
+      name: it.product.variantName
+        ? `${it.product.shortName || it.product.name} — ${it.product.variantName}`
+        : it.product.shortName || it.product.name,
+      unit: it.product.unit,
       price: it.product.price,
       qty: it.qty,
-      sum: Number(calcLineSum(it.product, it.qty).toFixed(2)),
+      sum: it.qty * it.product.price,
     }));
 
     const payload = {
+      token: API_TOKEN,
       name: customerName,
       phone,
       address,
       comment,
       items,
-      total: Number(total.toFixed(2)),
-      delivery: Number(delivery.toFixed(2)),
-      grandTotal: Number(grandTotal.toFixed(2)),
+      total,
+      delivery,
+      grandTotal,
       orderId,
       utmSource,
       utmMedium,
@@ -681,7 +644,7 @@ export default function App() {
     try {
       setSending(true);
 
-      const res = await fetch(API_ORDER_URL, {
+      const res = await fetch(API_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify(payload),
@@ -705,7 +668,6 @@ export default function App() {
 
       clearPendingOrderId();
       setCart({});
-      setQtyDrafts({});
       setAddress("");
       setComment("");
       setCustomerName("");
@@ -736,8 +698,9 @@ export default function App() {
       setOrdersError("");
 
       const url =
-        `${API_ORDERS_URL}` +
-        `?tgUserId=${encodeURIComponent(tgUserId)}` +
+        `${API_URL}?action=orders` +
+        `&token=${encodeURIComponent(API_TOKEN)}` +
+        `&tgUserId=${encodeURIComponent(tgUserId)}` +
         `&phone=${encodeURIComponent(phoneDigits)}` +
         `&limit=30`;
 
@@ -774,10 +737,12 @@ export default function App() {
     const phoneDigits = normalizePhone(phone);
 
     try {
-      const res = await fetch(API_CANCEL_URL, {
+      const res = await fetch(API_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({
+          token: API_TOKEN,
+          action: "cancelOrder",
           orderId,
           reason: r,
           tgUserId,
@@ -805,87 +770,6 @@ export default function App() {
     if (tab !== "orders") return;
     loadMyOrders();
   }, [tab]);
-
-  function renderQtyControls(product: Product) {
-    const q = qtyOf(product.id);
-    const mode = getSellMode(product);
-    const draftValue = qtyDrafts[product.id];
-    const displayValue = draftValue !== undefined ? draftValue : String(q);
-
-    if (q === 0) {
-      return (
-        <button style={styles.buyBtn} onClick={() => addToCart(product)}>
-          {mode === "weight" ? `Выбрать от ${getMinQty(product)} г` : "В корзину"}
-        </button>
-      );
-    }
-
-    return (
-      <div style={styles.qtyBlock}>
-        <div style={styles.qtyTopLine}>
-          <button style={styles.qtyBtnWide} onClick={() => decreaseQty(product)}>
-            −{mode === "weight" ? `${getStepQty(product)} г` : "1"}
-          </button>
-
-          <input
-            style={styles.qtyInput}
-            value={displayValue}
-            onChange={(e) => handleDraftChange(product.id, e.target.value)}
-            onBlur={() => commitDraft(product)}
-            inputMode="numeric"
-          />
-
-          <button style={styles.qtyBtnWide} onClick={() => increaseQty(product)}>
-            +{mode === "weight" ? `${getStepQty(product)} г` : "1"}
-          </button>
-        </div>
-
-        <div style={styles.qtyHint}>
-          {mode === "weight"
-            ? `Мин. ${getQtyLabel(product, getMinQty(product))}, шаг ${getStepQty(
-                product
-              )} г`
-            : `Мин. ${getMinQty(product)} шт, шаг ${getStepQty(product)} шт`}
-        </div>
-
-        <button
-          style={styles.removeBtnText}
-          onClick={() => removeFromCart(product.id)}
-        >
-          Удалить
-        </button>
-      </div>
-    );
-  }
-
-  const mobileCartRowStyle: React.CSSProperties = isMobile
-    ? {
-        display: "grid",
-        gridTemplateColumns: "1fr",
-        gap: 12,
-        alignItems: "start",
-        padding: "14px 0",
-        borderBottom: "1px solid #f0e7dc",
-      }
-    : styles.cartRow2;
-
-  const mobileCartRightStyle: React.CSSProperties = isMobile
-    ? {
-        display: "grid",
-        gap: 8,
-        minWidth: 0,
-      }
-    : styles.cartRightColumn;
-
-  const mobileCartControlsStyle: React.CSSProperties = isMobile
-    ? {
-        display: "grid",
-        gridTemplateColumns: "1fr 80px 1fr",
-        gap: 8,
-        alignItems: "center",
-        width: "100%",
-      }
-    : styles.cartQtyWeight;
 
   return (
     <div style={styles.page}>
@@ -950,18 +834,6 @@ export default function App() {
         </div>
       )}
 
-      {tab === "catalog" && cartCount > 0 && (
-  <button
-    style={styles.floatingCartBtn}
-    onClick={() => setTab("cart")}
-    aria-label="Открыть корзину"
-  >
-    <span style={styles.floatingCartIcon}>🛒</span>
-    <span style={styles.floatingCartText}>Корзина</span>
-    <span style={styles.floatingCartCount}>{cartCount}</span>
-  </button>
-)}
-
       <div style={styles.container}>
         <div style={styles.headerGrid}>
           <div style={styles.headerLeft}>
@@ -1014,7 +886,9 @@ export default function App() {
           <div style={styles.infoMuted}>{loadingHint}</div>
         )}
         {error && (
-          <div style={{ ...styles.info, color: "#c62828" }}>{error}</div>
+          <div style={{ ...styles.info, color: styles.colors.danger }}>
+            {error}
+          </div>
         )}
 
         {!loading && !error && (
@@ -1042,20 +916,21 @@ export default function App() {
                 </div>
 
                 <div style={styles.list}>
-                  {filteredProducts.map((p) => {
-                    const mode = getSellMode(p);
-                    const q = qtyOf(p.id);
+                  {filteredGroups.map((group) => {
+                    const selected = getSelectedVariant(group);
+                    const currentImg = selected.image;
+                    const currentQty = qtyOf(selected.id);
 
                     return (
-                      <div key={p.id} style={styles.card}>
-                        {p.image ? (
+                      <div key={group.key} style={styles.card}>
+                        {currentImg ? (
                           <img
-                            src={p.image}
-                            alt={p.name}
+                            src={currentImg}
+                            alt={group.title}
                             style={styles.cardImg}
                             loading="lazy"
                             decoding="async"
-                            onClick={() => setZoomSrc(p.image || null)}
+                            onClick={() => setZoomSrc(currentImg || null)}
                             onError={(e) => {
                               (e.currentTarget as HTMLImageElement).style.display =
                                 "none";
@@ -1066,34 +941,109 @@ export default function App() {
                         )}
 
                         <div style={styles.cardBody}>
-                          <div style={styles.cardName} title={p.name}>
-                            {p.name}
+                          <div style={styles.cardHeaderRow}>
+                            <div style={styles.cardName} title={group.title}>
+                              {group.title}
+                            </div>
+                            {group.badge ? (
+                              <div style={styles.badge}>{group.badge}</div>
+                            ) : null}
                           </div>
 
-                          {p.description ? (
-                            <div style={styles.cardDesc} title={p.description}>
-                              {p.description}
+                          {group.subtitle ? (
+                            <div style={styles.cardDesc} title={group.subtitle}>
+                              {group.subtitle}
                             </div>
                           ) : null}
 
                           <div style={styles.cardMeta}>
-                            <span style={styles.price}>{money(p.price)} ₽</span>
-                            <span style={styles.unit}> / {p.unit}</span>
+                            <span style={styles.price}>
+                              {group.variants.length > 1
+                                ? `от ${money(group.minPrice)} ₽`
+                                : `${money(selected.price)} ₽`}
+                            </span>
+                            <span style={styles.unit}>
+                              {group.variants.length > 1 ? "" : ` / ${selected.unit}`}
+                            </span>
                           </div>
 
-                          {mode === "weight" && (
-                            <div style={styles.weightBadge}>
-                              От {getQtyLabel(p, getMinQty(p))}, шаг {getStepQty(p)} г
+                          {group.variants.length > 1 && (
+                            <div style={styles.variantsWrap}>
+                              <div style={styles.variantLabel}>Варианты:</div>
+                              <div style={styles.variantsScroll}>
+                                {group.variants.map((variant) => {
+                                  const active = variant.id === selected.id;
+                                  const label = getVariantLabel(variant);
+
+                                  return (
+                                    <button
+                                      key={variant.id}
+                                      type="button"
+                                      style={{
+                                        ...styles.variantChip,
+                                        ...(active ? styles.variantChipActive : {}),
+                                      }}
+                                      onClick={() =>
+                                        selectVariant(group.key, variant.id)
+                                      }
+                                    >
+                                      {variant.image ? (
+                                        <img
+                                          src={variant.image}
+                                          alt={label}
+                                          style={styles.variantImage}
+                                        />
+                                      ) : null}
+                                      <div style={styles.variantText}>{label}</div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
                             </div>
                           )}
 
-                          {q > 0 && (
-                            <div style={styles.currentQtyLabel}>
-                              В корзине: {getQtyLabel(p, q)}
+                          {selected.storageType ? (
+                            <div style={styles.infoRow}>
+                              <strong>Тип:</strong> {selected.storageType}
+                            </div>
+                          ) : null}
+
+                          {selected.storageDays ? (
+                            <div style={styles.infoRow}>
+                              <strong>Срок хранения:</strong> {selected.storageDays}
+                            </div>
+                          ) : null}
+
+                          {selected.composition ? (
+                            <div style={styles.infoRow}>
+                              <strong>Состав:</strong> {selected.composition}
+                            </div>
+                          ) : null}
+
+                          {currentQty === 0 ? (
+                            <button
+                              style={styles.buyBtn}
+                              onClick={() => addToCart(selected)}
+                            >
+                              {getDisplayButtonText(group)}
+                            </button>
+                          ) : (
+                            <div style={styles.qtyInline}>
+                              <button
+                                style={styles.qtyBtn}
+                                onClick={() => setQty(selected.id, currentQty - 1)}
+                              >
+                                −
+                              </button>
+                              <div style={styles.qtyNum}>{currentQty}</div>
+                              <button
+                                style={styles.qtyBtn}
+                                onClick={() => setQty(selected.id, currentQty + 1)}
+                              >
+                                +
+                              </button>
                             </div>
                           )}
-
-                          {renderQtyControls(p)}
                         </div>
                       </div>
                     );
@@ -1105,87 +1055,53 @@ export default function App() {
             {tab === "cart" && (
               <div style={styles.panel}>
                 {cartItems.length === 0 ? (
-                  <div style={styles.info}>Корзина пустая</div>
+                  <div style={styles.info}>Корзина пуста</div>
                 ) : (
                   <>
-                    {cartItems.map((it) => {
-                      const product = it.product;
-                      const mode = getSellMode(product);
-                      const draftValue = qtyDrafts[product.id];
-                      const displayValue =
-                        draftValue !== undefined ? draftValue : String(it.qty);
-
-                      return (
-                        <div key={it.product.id} style={mobileCartRowStyle}>
-                          <div style={styles.cartLeft2}>
-                            <div style={styles.cartName2} title={it.product.name}>
-                              {it.product.name}
-                            </div>
-                            <div style={styles.cartMeta2}>
-                              {money(it.product.price)} ₽ / {it.product.unit}
-                            </div>
-                            <div style={styles.cartMeta2}>
-                              Выбрано: {getQtyLabel(product, it.qty)}
-                            </div>
+                    {cartItems.map((it) => (
+                      <div key={it.product.id} style={styles.cartRow2}>
+                        <div style={styles.cartLeft2}>
+                          <div style={styles.cartName2} title={it.product.name}>
+                            {it.product.variantName
+                              ? `${it.product.shortName || it.product.name} — ${it.product.variantName}`
+                              : it.product.shortName || it.product.name}
                           </div>
-
-                          <div style={mobileCartRightStyle}>
-                            <div
-                              style={{
-                                ...styles.cartSum2,
-                                ...(isMobile ? { textAlign: "left" } : {}),
-                              }}
-                            >
-                              {money(calcLineSum(product, it.qty))} ₽
-                            </div>
-
-                            <div style={mobileCartControlsStyle}>
-                              <button
-                                style={styles.qtyBtnWide}
-                                onClick={() => decreaseQty(product)}
-                              >
-                                −{mode === "weight" ? `${getStepQty(product)} г` : "1"}
-                              </button>
-
-                              <input
-                                style={styles.qtyInput}
-                                value={displayValue}
-                                onChange={(e) =>
-                                  handleDraftChange(product.id, e.target.value)
-                                }
-                                onBlur={() => commitDraft(product)}
-                                inputMode="numeric"
-                              />
-
-                              <button
-                                style={styles.qtyBtnWide}
-                                onClick={() => increaseQty(product)}
-                              >
-                                +{mode === "weight" ? `${getStepQty(product)} г` : "1"}
-                              </button>
-                            </div>
-
-                            <div
-                              style={{
-                                ...styles.qtyHint,
-                                ...(isMobile ? { textAlign: "left" } : {}),
-                              }}
-                            >
-                              {mode === "weight"
-                                ? `Мин. ${getQtyLabel(product, getMinQty(product))}`
-                                : `Мин. ${getMinQty(product)} шт`}
-                            </div>
-
-                            <button
-                              style={styles.removeBtnText}
-                              onClick={() => removeFromCart(product.id)}
-                            >
-                              Удалить
-                            </button>
+                          <div style={styles.cartMeta2}>
+                            {money(it.product.price)} ₽ / {it.product.unit}
                           </div>
                         </div>
-                      );
-                    })}
+
+                        <div style={styles.cartRight2}>
+                          <div style={styles.cartSum2}>
+                            {money(it.qty * it.product.price)} ₽
+                          </div>
+
+                          <div style={styles.cartQty2}>
+                            <button
+                              style={styles.qtyBtn2}
+                              onClick={() => setQty(it.product.id, it.qty - 1)}
+                            >
+                              −
+                            </button>
+                            <div style={styles.qtyNum2}>{it.qty}</div>
+                            <button
+                              style={styles.qtyBtn2}
+                              onClick={() => setQty(it.product.id, it.qty + 1)}
+                            >
+                              +
+                            </button>
+                          </div>
+
+                          <button
+                            style={styles.removeBtn2}
+                            onClick={() => setQty(it.product.id, 0)}
+                            title="Удалить"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </div>
+                    ))}
 
                     <div style={styles.totalBlock}>
                       <div style={styles.totalRow}>
@@ -1231,7 +1147,7 @@ export default function App() {
                 <div style={styles.h2}>Оформление</div>
 
                 <label style={styles.label}>
-                  Имя <span style={{ color: "#c62828" }}>*</span>
+                  Имя <span style={{ color: styles.colors.danger }}>*</span>
                 </label>
                 <input
                   style={styles.input}
@@ -1242,7 +1158,7 @@ export default function App() {
                 />
 
                 <label style={styles.label}>
-                  Телефон <span style={{ color: "#c62828" }}>*</span>
+                  Телефон <span style={{ color: styles.colors.danger }}>*</span>
                 </label>
                 <input
                   style={styles.input}
@@ -1254,21 +1170,23 @@ export default function App() {
                 />
 
                 <label style={styles.label}>
-                  Адрес <span style={{ color: "#c62828" }}>*</span>
+                  Адрес доставки{" "}
+                  <span style={{ color: styles.colors.danger }}>*</span>
                 </label>
-                <textarea
-                  style={styles.textarea}
+                <input
+                  style={styles.input}
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
-                  placeholder="Улица, дом, квартира / подъезд / код домофона"
+                  placeholder="улица, дом, подъезд, этаж, кв."
+                  autoComplete="street-address"
                 />
 
-                <label style={styles.label}>Комментарий к заказу</label>
-                <textarea
-                  style={styles.textarea}
+                <label style={styles.label}>Комментарий (необязательно)</label>
+                <input
+                  style={styles.input}
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
-                  placeholder="Например: позвонить за 10 минут"
+                  placeholder="код домофона, удобное время"
                 />
 
                 <div style={styles.totalBlock}>
@@ -1276,20 +1194,34 @@ export default function App() {
                     <div>Товары</div>
                     <div style={{ fontWeight: 700 }}>{money(total)} ₽</div>
                   </div>
+
                   <div style={styles.totalRow}>
-                    <div>Доставка</div>
+                    <div>
+                      Доставка{" "}
+                      {delivery === 0 ? (
+                        <span style={styles.freeTag}>бесплатно</span>
+                      ) : (
+                        <span style={styles.mutedTag}>
+                          до {money(FREE_DELIVERY_FROM)} ₽
+                        </span>
+                      )}
+                    </div>
                     <div style={{ fontWeight: 700 }}>{money(delivery)} ₽</div>
                   </div>
+
                   <div style={styles.totalRowBig}>
                     <div>Итого</div>
-                    <div style={{ fontWeight: 800 }}>{money(grandTotal)} ₽</div>
+                    <div style={{ fontWeight: 800 }}>
+                      {money(grandTotal)} ₽
+                    </div>
                   </div>
                 </div>
 
                 <button
                   style={{
                     ...styles.primaryBtn,
-                    ...(sending ? styles.primaryBtnDisabled : {}),
+                    opacity: sending ? 0.75 : 1,
+                    cursor: sending ? "not-allowed" : "pointer",
                   }}
                   onClick={submitOrder}
                   disabled={sending}
@@ -1300,6 +1232,7 @@ export default function App() {
                 <button
                   style={styles.secondaryBtn}
                   onClick={() => setTab("cart")}
+                  disabled={sending}
                 >
                   Назад в корзину
                 </button>
@@ -1308,762 +1241,885 @@ export default function App() {
 
             {tab === "orders" && (
               <div style={styles.panel}>
-                <div style={styles.h2}>Мои заказы</div>
+                <div style={styles.ordersHeader}>
+                  <div style={styles.h2}>Мои заказы</div>
+                  <button
+                    style={styles.refreshBtn}
+                    onClick={loadMyOrders}
+                    disabled={ordersLoading}
+                    title="Обновить"
+                  >
+                    {ordersLoading ? "Обновляем…" : "↻"}
+                  </button>
+                </div>
 
-                <label style={styles.label}>Телефон</label>
-                <input
-                  style={styles.input}
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+7..."
-                  autoComplete="tel"
-                  inputMode="tel"
-                />
-
-                <button
-                  style={styles.primaryBtn}
-                  onClick={loadMyOrders}
-                  disabled={ordersLoading}
-                >
-                  {ordersLoading ? "Загрузка..." : "Обновить"}
-                </button>
-
-                {ordersError && (
-                  <div style={{ ...styles.info, color: "#c62828" }}>
-                    {ordersError}
+                {!getTelegramWebApp() && (
+                  <div style={styles.infoMuted}>
+                    Для поиска заказов укажи тот же телефон, что был в оформлении.
                   </div>
                 )}
 
-                {!ordersLoading && !ordersError && orders.length === 0 && (
-                  <div style={styles.info}>Заказы не найдены</div>
-                )}
+                {ordersError ? (
+                  <div style={{ ...styles.info, color: styles.colors.danger }}>
+                    {ordersError}
+                  </div>
+                ) : null}
+
+                {ordersLoading && !orders.length ? (
+                  <div style={styles.info}>Загружаем заказы…</div>
+                ) : null}
+
+                {!ordersLoading && !ordersError && orders.length === 0 ? (
+                  <div style={styles.infoMuted}>
+                    Заказов пока нет. Оформи первый заказ — и он появится здесь.
+                  </div>
+                ) : null}
 
                 <div style={styles.ordersList}>
-                  {orders.map((o) => {
-                    const canCancel =
-                      String(o.status || "").toLowerCase() === "new";
+                  {orders.map((o, idx) => (
+                    <div key={o.orderId || idx} style={styles.orderCard}>
+                      <div style={styles.orderTop}>
+                        <div style={styles.orderDate}>
+                          {formatDate(o.createdAt)}
+                        </div>
+                        <div style={styles.orderStatus}>
+                          {humanStatus(o.status)}
+                        </div>
+                      </div>
 
-                    return (
-                      <div key={o.orderId} style={styles.orderCard}>
-                        <div style={styles.orderTop}>
-                          <div style={styles.orderMain}>
-                            <div style={styles.orderId}>Заказ #{o.orderId}</div>
-                            <div style={styles.orderDate}>
-                              {formatDate(o.createdAt)}
-                            </div>
-                          </div>
-
-                          <div style={styles.orderStatus}>
-                            {humanStatus(o.status)}
+                      <div style={styles.orderTotals}>
+                        <div style={styles.orderRow}>
+                          <div>Товары</div>
+                          <div style={{ fontWeight: 700 }}>{money(o.total)} ₽</div>
+                        </div>
+                        <div style={styles.orderRow}>
+                          <div>Доставка</div>
+                          <div style={{ fontWeight: 700 }}>
+                            {money(o.delivery)} ₽
                           </div>
                         </div>
-
-                        <div style={styles.orderPrices}>
-                          <div>Товары: {money(o.total)} ₽</div>
-                          <div>Доставка: {money(o.delivery)} ₽</div>
+                        <div style={styles.orderRowBig}>
+                          <div>Итого</div>
                           <div style={{ fontWeight: 800 }}>
-                            Итого: {money(o.grandTotal)} ₽
+                            {money(o.grandTotal)} ₽
                           </div>
                         </div>
+                      </div>
 
-                        <div style={styles.orderItems}>
-                          {o.items?.map((it, idx) => (
-                            <div key={`${o.orderId}_${idx}`} style={styles.orderItem}>
-                              • {it.name} — {it.qty} {it.unit || ""} ={" "}
-                              {money(it.sum)} ₽
+                      {o.status === "canceled" && o.cancelReason ? (
+                        <div style={styles.cancelReason}>
+                          Причина отмены: {o.cancelReason}
+                        </div>
+                      ) : null}
+
+                      <div style={styles.orderItems}>
+                        {Array.isArray(o.items) &&
+                          o.items.slice(0, 20).map((it, j) => (
+                            <div key={j} style={styles.orderItemRow}>
+                              <div style={styles.orderItemName} title={it.name}>
+                                {it.name}
+                              </div>
+                              <div style={styles.orderItemQty}>×{it.qty}</div>
+                              <div style={styles.orderItemSum}>
+                                {money(it.sum)} ₽
+                              </div>
                             </div>
                           ))}
-                        </div>
-
-                        {o.cancelReason ? (
-                          <div style={styles.cancelReason}>
-                            Причина отмены: {o.cancelReason}
+                        {Array.isArray(o.items) && o.items.length > 20 ? (
+                          <div style={styles.infoMuted}>
+                            Показаны первые 20 позиций…
                           </div>
                         ) : null}
-
-                        {canCancel && (
-                          <button
-                            style={styles.dangerBtn}
-                            onClick={() => setCancelOrderId(o.orderId)}
-                          >
-                            Отменить заказ
-                          </button>
-                        )}
                       </div>
-                    );
-                  })}
+
+                      {String(o.status || "").toLowerCase() === "new" &&
+                      o.orderId ? (
+                        <button
+                          style={styles.cancelBtn}
+                          onClick={() => {
+                            setCancelOrderId(o.orderId);
+                            setCancelReason("");
+                          }}
+                        >
+                          Отменить заказ
+                        </button>
+                      ) : null}
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
           </>
         )}
       </div>
+
+      {tab === "catalog" && cartCount > 0 && (
+        <button style={styles.floatingCart} onClick={() => setTab("cart")}>
+          🛒 {cartCount} • {money(total)} ₽
+        </button>
+      )}
     </div>
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
+const styles: Record<string, React.CSSProperties> & {
+  colors: {
+    ink: string;
+    primary: string;
+    sun: string;
+    orange: string;
+    danger: string;
+  };
+} = {
+  colors: {
+    ink: "#264653",
+    primary: "#2a9d8f",
+    sun: "#e9c46a",
+    orange: "#f4a261",
+    danger: "#e76f51",
+  },
+
   page: {
+    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
+    padding: 16,
     minHeight: "100vh",
-    background: "#f7f4ef",
-    color: "#2d251d",
-    fontFamily:
-      '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif',
-    padding: 12,
-    paddingBottom: 96,
+    boxSizing: "border-box",
+    color: "#264653",
+    backgroundImage:
+      "linear-gradient(rgba(255,255,255,0.30), rgba(255,255,255,0.50)), url('/images/bg-farm.png')",
+    backgroundRepeat: "no-repeat",
+    backgroundPosition: "center top",
+    backgroundSize: "cover",
+    backgroundAttachment: "fixed",
   },
 
   container: {
-    maxWidth: 1120,
+    maxWidth: 520,
+    width: "100%",
+    boxSizing: "border-box",
     margin: "0 auto",
+    background: "rgba(255,255,255,0.60)",
+    borderRadius: 22,
+    padding: 12,
+    boxShadow: "0 18px 34px rgba(38,70,83,0.18)",
+    border: "1px solid rgba(38,70,83,0.10)",
+    backdropFilter: "blur(8px)",
+    WebkitBackdropFilter: "blur(8px)",
+    overflow: "hidden",
+  },
+
+  toast: {
+    position: "sticky",
+    top: 8,
+    zIndex: 9999,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    padding: "12px 12px",
+    borderRadius: 14,
+    boxShadow: "0 10px 22px rgba(38,70,83,0.16)",
+    marginBottom: 10,
+    border: "1px solid rgba(38,70,83,0.10)",
+    background: "rgba(255,255,255,0.92)",
+    color: "#264653",
+    backdropFilter: "blur(10px)",
+    WebkitBackdropFilter: "blur(10px)",
+    boxSizing: "border-box",
+  },
+  toastError: { background: "rgba(231,111,81,0.16)", color: "#264653" },
+  toastSuccess: { background: "rgba(42,157,143,0.16)", color: "#264653" },
+  toastInfo: { background: "rgba(233,196,106,0.20)", color: "#264653" },
+  toastClose: {
+    border: 0,
+    background: "transparent",
+    fontSize: 22,
+    lineHeight: 1,
+    cursor: "pointer",
+    padding: 4,
+    color: "#264653",
   },
 
   headerGrid: {
     display: "grid",
-    gridTemplateColumns: "1fr auto",
-    gap: 12,
-    alignItems: "center",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 10,
+    alignItems: "start",
     marginBottom: 12,
   },
-
-  headerLeft: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    flexWrap: "wrap",
-  },
-
-  headerRight: {
-    display: "flex",
-    gap: 8,
-    flexWrap: "wrap",
-    justifyContent: "flex-end",
-  },
+  headerLeft: { display: "grid", gap: 10, minWidth: 0 },
+  headerRight: { display: "grid", gap: 10, minWidth: 0 },
 
   title: {
-    fontSize: 28,
-    fontWeight: 900,
-    letterSpacing: 0.2,
+    fontSize: 26,
+    fontWeight: 700,
+    letterSpacing: -0.2,
+    background: "linear-gradient(90deg, #1E2A32 0%, #e9c46a 100%)",
+    WebkitBackgroundClip: "text",
+    WebkitTextFillColor: "transparent",
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    height: 42,
+    display: "flex",
+    alignItems: "center",
+    marginLeft: 9,
   },
 
   navBtn: {
-    border: "1px solid #e7ddd2",
-    background: "#fff",
-    color: "#2d251d",
-    borderRadius: 12,
+    width: "100%",
+    maxWidth: "100%",
+    boxSizing: "border-box",
+    border: "1px solid rgba(38,70,83,0.18)",
+    background: "rgba(255,255,255,0.78)",
     padding: "10px 14px",
+    borderRadius: 999,
+    fontWeight: 650,
     cursor: "pointer",
-    fontWeight: 700,
+    boxShadow: "0 6px 14px rgba(38,70,83,0.12)",
+    color: "#264653",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    height: 42,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   navBtnActive: {
-    background: "#8a5a36",
-    color: "#fff",
-    borderColor: "#8a5a36",
-  },
-
-  info: {
-    background: "#fff",
-    border: "1px solid #e7ddd2",
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 12,
-  },
-
-  infoMuted: {
-    background: "#fffaf4",
-    border: "1px solid #f0e0c7",
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 12,
-    color: "#6f665d",
+    borderColor: "rgba(42,157,143,0.35)",
+    background:
+      "linear-gradient(180deg, rgba(42,157,143,0.98) 0%, rgba(38,70,83,0.98) 140%)",
+    color: "#ffffff",
+    boxShadow: "0 10px 22px rgba(42,157,143,0.20)",
   },
 
   chipsRow: {
     display: "flex",
-    gap: 8,
+    gap: 10,
     flexWrap: "wrap",
-    marginBottom: 14,
+    overflowX: "visible",
+    paddingBottom: 10,
+    marginBottom: 10,
   },
 
   chip: {
-    border: "1px solid #e7ddd2",
-    background: "#efe5d8",
-    color: "#2d251d",
+    border: "1px solid rgba(38,70,83,0.18)",
+    background: "rgba(255,255,255,0.74)",
+    padding: "9px 12px",
     borderRadius: 999,
-    padding: "9px 14px",
+    fontWeight: 600,
     cursor: "pointer",
-    fontWeight: 700,
+    whiteSpace: "nowrap",
+    boxShadow: "0 6px 14px rgba(38,70,83,0.10)",
+    color: "#264653",
+    boxSizing: "border-box",
   },
 
   chipActive: {
-    background: "#8a5a36",
-    color: "#fff",
-    borderColor: "#8a5a36",
+    background:
+      "linear-gradient(180deg, rgba(42,157,143,0.98) 0%, rgba(38,70,83,0.98) 140%)",
+    color: "#ffffff",
+    borderColor: "rgba(42,157,143,0.35)",
+    boxShadow: "0 10px 22px rgba(42,157,143,0.18)",
   },
 
   chipPromo: {
-    background: "#fff0e2",
-    borderColor: "#f0c9a8",
-    color: "#8a4b16",
+    background: "rgba(244,162,97,0.20)",
+    border: "1px solid rgba(244,162,97,0.65)",
+    color: "#264653",
+    fontWeight: 700,
   },
 
   chipPromoActive: {
-    background: "#d56d1f",
-    color: "#fff",
-    borderColor: "#d56d1f",
+    background:
+      "linear-gradient(180deg, rgba(244,162,97,1) 0%, rgba(231,111,81,1) 140%)",
+    color: "#ffffff",
+    borderColor: "rgba(244,162,97,0.35)",
+    boxShadow: "0 10px 22px rgba(244,162,97,0.25)",
   },
 
-  list: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
-    gap: 16,
-  },
+  info: { padding: 12, fontWeight: 650, color: "#264653" },
+  infoMuted: { padding: 8, color: "rgba(38,70,83,0.82)", fontWeight: 550 },
+
+  list: { display: "grid", gap: 12 },
 
   card: {
-    background: "#fff",
-    border: "1px solid #e7ddd2",
+    background: "rgba(255,255,255,0.55)",
     borderRadius: 18,
     overflow: "hidden",
-    boxShadow: "0 2px 10px rgba(0,0,0,0.04)",
-    display: "flex",
-    flexDirection: "column",
+    boxShadow: "0 10px 22px rgba(38,70,83,0.14)",
+    border: "1px solid rgba(38,70,83,0.10)",
+    display: "grid",
+    gridTemplateColumns: "110px 1fr",
+    alignItems: "start",
+    boxSizing: "border-box",
   },
 
   cardImg: {
-    width: "100%",
-    aspectRatio: "1 / 0.9",
+    width: 110,
+    height: 108,
     objectFit: "cover",
-    background: "#f5efe8",
+    display: "block",
+    alignSelf: "start",
     cursor: "zoom-in",
   },
 
   cardImgPlaceholder: {
-    width: "100%",
-    aspectRatio: "1 / 0.9",
+    width: 110,
+    height: 108,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    background: "#f5efe8",
-    color: "#8d8379",
-    fontWeight: 700,
+    background: "rgba(233,196,106,0.22)",
+    color: "#264653",
+    fontWeight: 650,
+    boxSizing: "border-box",
+    alignSelf: "start",
   },
 
   cardBody: {
-    padding: 14,
+    padding: 12,
     display: "flex",
     flexDirection: "column",
-    gap: 10,
-    flex: 1,
+    gap: 6,
+    boxSizing: "border-box",
+  },
+
+  cardHeaderRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 8,
   },
 
   cardName: {
-    fontSize: 17,
-    fontWeight: 800,
-    lineHeight: 1.25,
+    fontSize: 16,
+    fontWeight: 650,
+    lineHeight: 1.15,
+    color: "#264653",
+    display: "-webkit-box",
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: "vertical",
+    overflow: "hidden",
+    flex: 1,
+  },
+
+  badge: {
+    flexShrink: 0,
+    background: "rgba(233,196,106,0.25)",
+    color: "#264653",
+    border: "1px solid rgba(233,196,106,0.65)",
+    borderRadius: 999,
+    padding: "4px 8px",
+    fontSize: 11,
+    fontWeight: 700,
   },
 
   cardDesc: {
-    fontSize: 14,
-    color: "#6f665d",
-    lineHeight: 1.4,
-    minHeight: 56,
-  },
-
-  cardMeta: {
-    display: "flex",
-    alignItems: "baseline",
-    gap: 4,
-  },
-
-  price: {
-    fontSize: 22,
-    fontWeight: 900,
-    color: "#8a5a36",
-  },
-
-  unit: {
-    color: "#6f665d",
-    fontSize: 14,
-  },
-
-  weightBadge: {
-    display: "inline-block",
-    alignSelf: "flex-start",
-    background: "#f5eee4",
-    color: "#7c5431",
-    padding: "6px 10px",
-    borderRadius: 999,
     fontSize: 12,
-    fontWeight: 800,
+    color: "rgba(38,70,83,0.80)",
+    lineHeight: 1.25,
+    fontWeight: 450,
+    display: "-webkit-box",
+    WebkitLineClamp: 4,
+    WebkitBoxOrient: "vertical",
+    overflow: "hidden",
   },
 
-  currentQtyLabel: {
-    fontSize: 13,
-    color: "#6f665d",
+  cardMeta: { fontWeight: 550 },
+
+  price: { color: "#2a9d8f", fontWeight: 700 },
+  unit: { color: "rgba(38,70,83,0.85)", fontWeight: 500 },
+
+  variantsWrap: {
+    display: "grid",
+    gap: 6,
+    marginTop: 4,
+  },
+
+  variantLabel: {
+    fontSize: 12,
     fontWeight: 700,
+    color: "#264653",
+  },
+
+  variantsScroll: {
+    display: "flex",
+    gap: 8,
+    overflowX: "auto",
+    paddingBottom: 4,
+  },
+
+  variantChip: {
+    display: "grid",
+    gap: 4,
+    minWidth: 88,
+    padding: 6,
+    borderRadius: 14,
+    border: "1px solid rgba(38,70,83,0.16)",
+    background: "rgba(255,255,255,0.82)",
+    cursor: "pointer",
+    boxShadow: "0 6px 12px rgba(38,70,83,0.08)",
+    textAlign: "center",
+  },
+
+  variantChipActive: {
+    border: "2px solid #7c4dff",
+    background: "rgba(124,77,255,0.08)",
+  },
+
+  variantImage: {
+    width: 52,
+    height: 52,
+    objectFit: "cover",
+    borderRadius: 10,
+    display: "block",
+    margin: "0 auto",
+  },
+
+  variantText: {
+    fontSize: 11,
+    lineHeight: 1.2,
+    color: "#264653",
+    fontWeight: 600,
+  },
+
+  infoRow: {
+    fontSize: 12,
+    lineHeight: 1.35,
+    color: "rgba(38,70,83,0.90)",
   },
 
   buyBtn: {
-    marginTop: "auto",
-    border: "none",
-    background: "#8a5a36",
+    marginTop: 4,
+    background:
+      "linear-gradient(180deg, rgba(42,157,143,1) 0%, rgba(38,70,83,1) 140%)",
     color: "#fff",
-    borderRadius: 12,
-    padding: "12px 14px",
+    border: "1px solid rgba(255,255,255,0.22)",
+    borderRadius: 14,
+    padding: "9px 12px",
+    fontWeight: 650,
     cursor: "pointer",
-    fontWeight: 800,
-  },
-
-  qtyBlock: {
-    marginTop: "auto",
-    display: "grid",
-    gap: 8,
-  },
-
-  qtyTopLine: {
-    display: "grid",
-    gridTemplateColumns: "1fr 80px 1fr",
-    gap: 8,
-    alignItems: "center",
-  },
-
-  qtyBtnWide: {
-    border: "1px solid #e7ddd2",
-    background: "#fff",
-    color: "#2d251d",
-    minHeight: 42,
-    borderRadius: 10,
-    cursor: "pointer",
-    fontSize: 14,
-    fontWeight: 800,
-    padding: "0 10px",
-  },
-
-  qtyInput: {
-    width: "100%",
+    width: "fit-content",
+    boxShadow: "0 10px 22px rgba(42,157,143,0.18)",
     boxSizing: "border-box",
-    border: "1px solid #e7ddd2",
-    borderRadius: 10,
-    minHeight: 42,
-    padding: "0 10px",
-    textAlign: "center",
-    fontSize: 16,
-    fontWeight: 800,
-    outline: "none",
   },
 
-  qtyHint: {
-    fontSize: 12,
-    color: "#7b736a",
+  qtyInline: { display: "flex", alignItems: "center", gap: 8, marginTop: 4 },
+
+  qtyBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    border: "1px solid rgba(38,70,83,0.16)",
+    background: "rgba(255,255,255,0.82)",
+    fontSize: 18,
+    cursor: "pointer",
+    boxShadow: "0 8px 16px rgba(38,70,83,0.10)",
+    color: "#264653",
+    boxSizing: "border-box",
+  },
+
+  qtyNum: {
+    minWidth: 24,
     textAlign: "center",
+    fontWeight: 650,
+    color: "#264653",
   },
 
   panel: {
-    background: "#fff",
-    border: "1px solid #e7ddd2",
+    background: "rgba(255,255,255,0.80)",
     borderRadius: 18,
-    padding: 16,
-    boxShadow: "0 2px 10px rgba(0,0,0,0.04)",
+    padding: 12,
+    boxShadow: "0 10px 22px rgba(38,70,83,0.14)",
+    border: "1px solid rgba(38,70,83,0.10)",
+    boxSizing: "border-box",
   },
 
-  h2: {
-    fontSize: 24,
-    fontWeight: 900,
-    marginBottom: 14,
+  totalBlock: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTop: "1px solid rgba(38,70,83,0.10)",
+    display: "grid",
+    gap: 8,
   },
+
+  totalRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    fontSize: 14,
+    color: "#264653",
+    fontWeight: 550,
+  },
+
+  totalRowBig: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    fontSize: 16,
+    paddingTop: 6,
+    marginTop: 4,
+    borderTop: "1px dashed rgba(38,70,83,0.22)",
+    color: "#264653",
+  },
+
+  freeTag: {
+    marginLeft: 8,
+    padding: "3px 8px",
+    borderRadius: 999,
+    background: "rgba(233,196,106,0.30)",
+    color: "#264653",
+    fontWeight: 650,
+    fontSize: 12,
+    border: "1px solid rgba(233,196,106,0.65)",
+    boxSizing: "border-box",
+  },
+
+  mutedTag: {
+    marginLeft: 8,
+    padding: "3px 8px",
+    borderRadius: 999,
+    background: "rgba(244,162,97,0.18)",
+    color: "#264653",
+    fontWeight: 600,
+    fontSize: 12,
+    border: "1px solid rgba(244,162,97,0.55)",
+    boxSizing: "border-box",
+  },
+
+  h2: { fontSize: 18, fontWeight: 650, marginBottom: 10, color: "#264653" },
 
   label: {
     display: "block",
+    marginTop: 10,
+    fontWeight: 600,
     fontSize: 14,
-    fontWeight: 700,
-    marginBottom: 6,
-    marginTop: 12,
+    color: "#264653",
   },
 
   input: {
     width: "100%",
     boxSizing: "border-box",
-    border: "1px solid #e7ddd2",
-    borderRadius: 12,
-    padding: "12px 14px",
-    fontSize: 16,
+    padding: "12px 12px",
+    borderRadius: 14,
+    border: "1px solid rgba(38,70,83,0.16)",
+    marginTop: 6,
+    fontSize: 14,
+    background: "rgba(255,255,255,0.86)",
     outline: "none",
-    background: "#fff",
+    boxShadow: "0 8px 14px rgba(38,70,83,0.08)",
+    color: "#264653",
   },
 
   textarea: {
     width: "100%",
-    minHeight: 96,
     boxSizing: "border-box",
-    border: "1px solid #e7ddd2",
-    borderRadius: 12,
-    padding: "12px 14px",
-    fontSize: 16,
+    padding: "12px 12px",
+    borderRadius: 14,
+    border: "1px solid rgba(38,70,83,0.16)",
+    marginTop: 6,
+    fontSize: 14,
+    background: "rgba(255,255,255,0.86)",
     outline: "none",
-    background: "#fff",
+    boxShadow: "0 8px 14px rgba(38,70,83,0.08)",
+    color: "#264653",
+    minHeight: 90,
     resize: "vertical",
   },
 
   primaryBtn: {
-    marginTop: 14,
     width: "100%",
-    border: "none",
-    background: "#8a5a36",
+    marginTop: 12,
+    background:
+      "linear-gradient(180deg, rgba(42,157,143,1) 0%, rgba(38,70,83,1) 140%)",
     color: "#fff",
-    borderRadius: 12,
-    padding: "14px 16px",
+    border: "1px solid rgba(255,255,255,0.22)",
+    borderRadius: 16,
+    padding: "13px 14px",
+    fontWeight: 650,
     cursor: "pointer",
-    fontWeight: 800,
-    fontSize: 16,
-  },
-
-  primaryBtnDisabled: {
-    opacity: 0.65,
-    cursor: "not-allowed",
+    boxShadow: "0 12px 26px rgba(42,157,143,0.18)",
+    boxSizing: "border-box",
   },
 
   secondaryBtn: {
-    marginTop: 10,
     width: "100%",
-    border: "1px solid #e7ddd2",
-    background: "#fff",
-    color: "#2d251d",
-    borderRadius: 12,
-    padding: "14px 16px",
-    cursor: "pointer",
-    fontWeight: 800,
-    fontSize: 16,
-  },
-
-  dangerBtn: {
-    marginTop: 12,
-    border: "none",
-    background: "#c62828",
-    color: "#fff",
-    borderRadius: 12,
-    padding: "12px 14px",
-    cursor: "pointer",
-    fontWeight: 800,
-  },
-
-  totalBlock: {
-    marginTop: 14,
-    background: "#faf7f2",
-    border: "1px solid #eee1d2",
-    borderRadius: 14,
-    padding: 14,
-  },
-
-  totalRow: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    padding: "6px 0",
-  },
-
-  totalRowBig: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    paddingTop: 10,
     marginTop: 10,
-    borderTop: "1px solid #eadfce",
-    fontSize: 18,
+    background: "rgba(244,162,97,0.18)",
+    color: "#264653",
+    border: "1px solid rgba(244,162,97,0.55)",
+    borderRadius: 16,
+    padding: "13px 14px",
+    fontWeight: 650,
+    cursor: "pointer",
+    boxShadow: "0 10px 22px rgba(244,162,97,0.14)",
+    boxSizing: "border-box",
   },
 
-  freeTag: {
-    display: "inline-block",
-    marginLeft: 6,
-    padding: "2px 8px",
+  floatingCart: {
+    position: "fixed",
+    left: "50%",
+    transform: "translateX(-50%)",
+    bottom: 16,
+    zIndex: 9999,
+    maxWidth: 520,
+    width: "calc(100% - 32px)",
+    boxSizing: "border-box",
+    border: "1px solid rgba(38,70,83,0.16)",
+    background:
+      "linear-gradient(180deg, rgba(233,196,106,0.92) 0%, rgba(244,162,97,0.90) 100%)",
+    color: "#264653",
     borderRadius: 999,
-    background: "#e8f5e9",
-    color: "#2e7d32",
-    fontSize: 12,
-    fontWeight: 800,
-    verticalAlign: "middle",
+    padding: "12px 14px",
+    fontWeight: 650,
+    cursor: "pointer",
+    boxShadow: "0 16px 32px rgba(38,70,83,0.18)",
   },
 
-  mutedTag: {
-    display: "inline-block",
-    marginLeft: 6,
-    padding: "2px 8px",
-    borderRadius: 999,
-    background: "#f2eee8",
-    color: "#6f665d",
-    fontSize: 12,
+  ordersHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    marginBottom: 6,
+  },
+
+  refreshBtn: {
+    border: "1px solid rgba(38,70,83,0.16)",
+    background: "rgba(255,255,255,0.85)",
+    borderRadius: 12,
+    padding: "8px 10px",
+    cursor: "pointer",
     fontWeight: 700,
-    verticalAlign: "middle",
+    boxShadow: "0 8px 14px rgba(38,70,83,0.08)",
+  },
+
+  ordersList: { display: "grid", gap: 10, marginTop: 10 },
+
+  orderCard: {
+    background: "rgba(255,255,255,0.70)",
+    border: "1px solid rgba(38,70,83,0.10)",
+    borderRadius: 16,
+    padding: 12,
+    boxShadow: "0 10px 18px rgba(38,70,83,0.10)",
+  },
+
+  orderTop: {
+    display: "flex",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    gap: 10,
+    marginBottom: 8,
+  },
+
+  orderDate: { fontWeight: 650, color: "#264653" },
+  orderStatus: { fontWeight: 650, color: "rgba(38,70,83,0.85)" },
+
+  orderTotals: {
+    display: "grid",
+    gap: 6,
+    paddingBottom: 8,
+    borderBottom: "1px solid rgba(38,70,83,0.10)",
+    marginBottom: 8,
+  },
+
+  orderRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    fontSize: 14,
+    color: "#264653",
+  },
+
+  orderRowBig: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    fontSize: 15,
+    color: "#264653",
+    paddingTop: 6,
+    marginTop: 2,
+    borderTop: "1px dashed rgba(38,70,83,0.20)",
+  },
+
+  orderItems: { display: "grid", gap: 6 },
+
+  orderItemRow: {
+    display: "grid",
+    gridTemplateColumns: "1fr auto auto",
+    gap: 8,
+    alignItems: "baseline",
+  },
+
+  orderItemName: {
+    fontSize: 13,
+    color: "rgba(38,70,83,0.90)",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+
+  orderItemQty: {
+    fontSize: 13,
+    color: "rgba(38,70,83,0.75)",
+    fontWeight: 600,
+  },
+
+  orderItemSum: { fontSize: 13, color: "#264653", fontWeight: 650 },
+
+  cancelBtn: {
+    width: "100%",
+    marginTop: 10,
+    border: "1px solid rgba(231,111,81,0.55)",
+    background: "rgba(231,111,81,0.14)",
+    color: "#264653",
+    borderRadius: 14,
+    padding: "11px 12px",
+    fontWeight: 750,
+    cursor: "pointer",
+    boxShadow: "0 8px 14px rgba(231,111,81,0.12)",
+    boxSizing: "border-box",
+  },
+
+  cancelReason: {
+    marginTop: 8,
+    fontSize: 13,
+    color: "rgba(38,70,83,0.88)",
+    background: "rgba(244,162,97,0.16)",
+    border: "1px solid rgba(244,162,97,0.40)",
+    borderRadius: 12,
+    padding: "8px 10px",
   },
 
   cartRow2: {
     display: "grid",
-    gridTemplateColumns: "1fr auto",
-    gap: 12,
+    gridTemplateColumns: "minmax(0, 1fr) 132px",
+    gap: 10,
     alignItems: "start",
-    padding: "14px 0",
-    borderBottom: "1px solid #f0e7dc",
+    padding: "12px 0",
+    borderBottom: "1px solid rgba(38,70,83,0.10)",
   },
 
-  cartLeft2: {
-    minWidth: 0,
-  },
+  cartLeft2: { minWidth: 0, display: "grid", gap: 4 },
 
   cartName2: {
-    fontWeight: 800,
-    lineHeight: 1.3,
-    marginBottom: 4,
-    wordBreak: "break-word",
+    fontWeight: 750,
+    fontSize: 15,
+    color: "#264653",
+    lineHeight: 1.18,
+    display: "-webkit-box",
+    WebkitLineClamp: 3,
+    WebkitBoxOrient: "vertical",
+    overflow: "hidden",
   },
 
   cartMeta2: {
-    color: "#6f665d",
-    fontSize: 14,
-    marginTop: 2,
-    wordBreak: "break-word",
-  },
-
-  cartRightColumn: {
-    display: "grid",
-    gap: 8,
-    minWidth: 320,
-  },
-
-  cartSum2: {
-    fontWeight: 900,
-    textAlign: "right",
-  },
-
-  cartQtyWeight: {
-    display: "grid",
-    gridTemplateColumns: "1fr 80px 1fr",
-    gap: 8,
-    alignItems: "center",
-  },
-
-  removeBtnText: {
-    border: "1px solid #f3cdcd",
-    background: "#fff5f5",
-    color: "#c62828",
-    borderRadius: 10,
-    padding: "10px 12px",
-    cursor: "pointer",
-    fontWeight: 800,
-  },
-
-  ordersList: {
-    display: "grid",
-    gap: 12,
-    marginTop: 14,
-  },
-
-  orderCard: {
-    border: "1px solid #e7ddd2",
-    borderRadius: 16,
-    padding: 14,
-    background: "#fffdfb",
-  },
-
-  orderTop: {
-    display: "grid",
-    gridTemplateColumns: "1fr auto",
-    gap: 12,
-    alignItems: "start",
-    marginBottom: 10,
-  },
-
-  orderMain: {
-    minWidth: 0,
-  },
-
-  orderId: {
-    fontWeight: 900,
-    fontSize: 16,
-    marginBottom: 4,
-    wordBreak: "break-word",
-  },
-
-  orderDate: {
-    color: "#6f665d",
-    fontSize: 14,
-  },
-
-  orderStatus: {
-    background: "#f3e7da",
-    color: "#8a5a36",
-    borderRadius: 999,
-    padding: "6px 10px",
-    fontWeight: 800,
-    fontSize: 13,
+    color: "rgba(38,70,83,0.75)",
+    fontWeight: 550,
+    fontSize: 12,
     whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
   },
 
-  orderPrices: {
-    display: "grid",
-    gap: 4,
-    marginBottom: 10,
-  },
+  cartRight2: { display: "grid", justifyItems: "end", gap: 8 },
 
-  orderItems: {
-    display: "grid",
-    gap: 4,
-    color: "#3d342b",
-  },
+  cartSum2: { fontWeight: 800, color: "#264653", whiteSpace: "nowrap" },
 
-  orderItem: {
-    lineHeight: 1.4,
-  },
-
-  cancelReason: {
-    marginTop: 10,
-    background: "#fff5f5",
-    color: "#8b1f1f",
-    border: "1px solid #f3cdcd",
-    borderRadius: 12,
-    padding: "10px 12px",
-  },
-
-  toast: {
-    position: "fixed",
-    top: 12,
-    right: 12,
-    zIndex: 3000,
-    minWidth: 260,
-    maxWidth: 420,
-    display: "flex",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    gap: 12,
-    padding: "12px 14px",
+  cartQty2: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "6px 6px",
     borderRadius: 14,
-    border: "1px solid #e7ddd2",
-    background: "#fff",
-    boxShadow: "0 10px 24px rgba(0,0,0,0.12)",
+    border: "1px solid rgba(38,70,83,0.12)",
+    background: "rgba(255,255,255,0.70)",
+    boxShadow: "0 8px 14px rgba(38,70,83,0.08)",
   },
 
-  toastError: {
-    background: "#fdeaea",
-    borderColor: "#f0c0c0",
-    color: "#8b1f1f",
-  },
-
-  toastSuccess: {
-    background: "#e8f5e9",
-    borderColor: "#bfe1c1",
-    color: "#1f5e24",
-  },
-
-  toastInfo: {
-    background: "#e8f1fd",
-    borderColor: "#bfd3f5",
-    color: "#174c91",
-  },
-
-  toastClose: {
-    border: "none",
-    background: "transparent",
-    color: "inherit",
+  qtyBtn2: {
+    width: 28,
+    height: 28,
+    borderRadius: 10,
+    border: "1px solid rgba(38,70,83,0.14)",
+    background: "rgba(255,255,255,0.92)",
+    fontSize: 18,
     cursor: "pointer",
-    fontSize: 20,
-    fontWeight: 800,
+    color: "#264653",
     lineHeight: 1,
-    padding: 0,
+  },
+
+  qtyNum2: {
+    minWidth: 18,
+    textAlign: "center",
+    fontWeight: 800,
+    color: "#264653",
+  },
+
+  removeBtn2: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    border: "1px solid rgba(231,111,81,0.55)",
+    background: "rgba(231,111,81,0.14)",
+    color: "#264653",
+    fontSize: 20,
+    cursor: "pointer",
+    lineHeight: 1,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    boxShadow: "0 8px 14px rgba(231,111,81,0.12)",
   },
 
   zoomOverlay: {
     position: "fixed",
     inset: 0,
-    background: "rgba(0,0,0,0.65)",
+    zIndex: 10000,
+    background: "rgba(0,0,0,0.55)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 2500,
     padding: 16,
   },
 
   zoomBox: {
     position: "relative",
-    maxWidth: "min(92vw, 860px)",
-    maxHeight: "90vh",
-    background: "#fff",
+    width: "min(520px, 100%)",
+    maxHeight: "85vh",
+    background: "rgba(255,255,255,0.92)",
     borderRadius: 18,
-    padding: 12,
-    boxShadow: "0 18px 42px rgba(0,0,0,0.28)",
+    padding: 10,
+    boxShadow: "0 18px 40px rgba(0,0,0,0.35)",
+    overflow: "hidden",
+  },
+
+  zoomImg: {
+    width: "100%",
+    height: "auto",
+    maxHeight: "80vh",
+    objectFit: "contain",
+    borderRadius: 14,
+    display: "block",
   },
 
   zoomClose: {
     position: "absolute",
-    top: 6,
+    top: 8,
     right: 8,
-    border: "none",
-    background: "rgba(255,255,255,0.94)",
-    width: 34,
-    height: 34,
-    borderRadius: 999,
-    cursor: "pointer",
-    fontSize: 20,
-    fontWeight: 900,
-    zIndex: 2,
-  },
-
-  zoomImg: {
-    display: "block",
-    maxWidth: "100%",
-    maxHeight: "calc(90vh - 24px)",
+    width: 36,
+    height: 36,
     borderRadius: 12,
-    objectFit: "contain",
-  },
-
-  floatingCartBtn: {
-  position: "fixed",
-  left: 16,
-  bottom: 20,
-  zIndex: 2600,
-  border: "2px solid #ffffff",
-  background: "linear-gradient(135deg, #8a5a36 0%, #a56a3f 100%)",
-  color: "#fff",
-  minWidth: 132,
-  height: 56,
-  borderRadius: 999,
-  boxShadow: "0 12px 28px rgba(0,0,0,0.24)",
-  cursor: "pointer",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: 8,
-  padding: "0 16px",
-},
-
-floatingCartIcon: {
-  fontSize: 20,
-  lineHeight: 1,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-},
-
-floatingCartText: {
-  fontSize: 15,
-  fontWeight: 800,
-  lineHeight: 1,
-  whiteSpace: "nowrap",
-},
-
-floatingCartCount: {
-  minWidth: 24,
-  height: 24,
-  borderRadius: 999,
-  background: "#ffffff",
-  color: "#8a5a36",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontSize: 12,
-  fontWeight: 900,
-  padding: "0 7px",
-  boxSizing: "border-box",
-  boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
+    border: "1px solid rgba(38,70,83,0.16)",
+    background: "rgba(255,255,255,0.85)",
+    cursor: "pointer",
+    fontSize: 22,
+    lineHeight: 1,
+    color: "#264653",
+    boxShadow: "0 8px 14px rgba(0,0,0,0.12)",
   },
 };
