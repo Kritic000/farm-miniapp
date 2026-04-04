@@ -33,6 +33,7 @@ type Product = {
   storageDays?: number | string;
   composition?: string;
   subtitle?: string;
+  flavor?: string;
 };
 
 type CartItem = {
@@ -210,14 +211,40 @@ function getProductSubtitle(product: Product, fallbackTitle?: string) {
   return firstSentence;
 }
 
+function getVariantKey(product: Product) {
+  return String(product.variantName || "__default__").trim() || "__default__";
+}
+
 function getVariantLabel(product: Product) {
+  const variantName = String(product.variantName || "").trim();
   const shortName = String(product.shortName || "").trim();
+
+  if (variantName && shortName) return `${variantName} · ${shortName}`;
+  if (variantName) return variantName;
   if (shortName) return shortName;
 
-  const variantName = String(product.variantName || "").trim();
-  if (variantName) return variantName;
-
   return String(product.unit || "").trim() || String(product.name || "").trim();
+}
+
+function getFlavorKey(product: Product) {
+  return String(product.flavor || "").trim();
+}
+
+function getFlavorLabel(product: Product) {
+  return String(product.flavor || "").trim();
+}
+
+function getProductDisplayName(product: Product, withFlavor = true) {
+  const parts = [String(product.name || "").trim()].filter(Boolean);
+  const variantName = String(product.variantName || "").trim();
+  const flavor = String(product.flavor || "").trim();
+  const shortName = String(product.shortName || "").trim();
+
+  if (variantName) parts.push(variantName);
+  if (withFlavor && flavor) parts.push(flavor);
+  if (shortName) parts.push(shortName);
+
+  return parts.join(" · ");
 }
 
 function getBadgeText(group: Product[], selected: Product) {
@@ -480,6 +507,7 @@ export default function App() {
   const [cart, setCart] = useState<Record<string, CartItem>>({});
   const [qtyDrafts, setQtyDrafts] = useState<Record<string, string>>({});
   const [selectedVariantByGroup, setSelectedVariantByGroup] = useState<Record<string, string>>({});
+  const [selectedFlavorByGroupVariant, setSelectedFlavorByGroupVariant] = useState<Record<string, string>>({});
 
   const [address, setAddress] = useState("");
   const [comment, setComment] = useState("");
@@ -942,14 +970,58 @@ export default function App() {
   function getSelectedProduct(group: Product[]) {
     const fallback = group[0];
     const groupKey = getGroupKey(fallback);
-    const selectedId = selectedVariantByGroup[groupKey];
-    return group.find((item) => item.id === selectedId) || fallback;
+
+    const variantEntries = Array.from(
+      group.reduce((map, item) => {
+        const key = getVariantKey(item);
+        const current = map.get(key) || [];
+        current.push(item);
+        map.set(key, current);
+        return map;
+      }, new Map<string, Product[]>())
+    );
+
+    const fallbackVariantKey = variantEntries[0]?.[0] || getVariantKey(fallback);
+    const selectedVariantKey = selectedVariantByGroup[groupKey] || fallbackVariantKey;
+    const variantItems =
+      variantEntries.find(([key]) => key === selectedVariantKey)?.[1] ||
+      variantEntries[0]?.[1] ||
+      group;
+
+    const flavoredItems = variantItems.filter((item) => getFlavorKey(item));
+
+    if (flavoredItems.length) {
+      const flavorStateKey = `${groupKey}__${selectedVariantKey}`;
+      const selectedFlavor = selectedFlavorByGroupVariant[flavorStateKey] || getFlavorKey(flavoredItems[0]);
+      return flavoredItems.find((item) => getFlavorKey(item) === selectedFlavor) || flavoredItems[0];
+    }
+
+    return variantItems[0] || fallback;
   }
 
-  function selectVariant(groupKey: string, productId: string) {
+  function selectVariant(groupKey: string, variantKey: string, group: Product[]) {
     setSelectedVariantByGroup((prev) => ({
       ...prev,
-      [groupKey]: productId,
+      [groupKey]: variantKey,
+    }));
+
+    const variantItems = group.filter((item) => getVariantKey(item) === variantKey);
+    const flavoredItems = variantItems.filter((item) => getFlavorKey(item));
+
+    if (flavoredItems.length) {
+      const flavorStateKey = `${groupKey}__${variantKey}`;
+      setSelectedFlavorByGroupVariant((prev) => ({
+        ...prev,
+        [flavorStateKey]: prev[flavorStateKey] || getFlavorKey(flavoredItems[0]),
+      }));
+    }
+  }
+
+  function selectFlavor(groupKey: string, variantKey: string, flavor: string) {
+    const flavorStateKey = `${groupKey}__${variantKey}`;
+    setSelectedFlavorByGroupVariant((prev) => ({
+      ...prev,
+      [flavorStateKey]: flavor,
     }));
   }
 
@@ -962,7 +1034,7 @@ export default function App() {
     if (q === 0) {
       return (
         <button style={styles.buyBtn} onClick={() => addToCart(product)}>
-          {mode === "weight" ? `Выбрать от ${getMinQty(product)} г` : "В корзину"}
+          {mode === "weight" ? `Выбрать от ${getMinQty(product)} г` : `В корзину${String(product.flavor || "").trim() ? ` · ${String(product.flavor).trim()}` : ""}`}
         </button>
       );
     }
@@ -1204,12 +1276,28 @@ export default function App() {
                     const storageTypeLabel = getStorageTypeLabel(selected);
                     const selectedUnit = String(selected.unit || "").trim();
 
+                    const variantMap = items.reduce((map, item) => {
+                      const key = getVariantKey(item);
+                      const current = map.get(key) || [];
+                      current.push(item);
+                      map.set(key, current);
+                      return map;
+                    }, new Map<string, Product[]>());
+
+                    const variantEntries = Array.from(variantMap.entries());
+                    const selectedVariantKey = getVariantKey(selected);
+                    const selectedVariantItems = variantMap.get(selectedVariantKey) || [selected];
+                    const flavorItems = selectedVariantItems.filter((item) => getFlavorKey(item));
+                    const hasFlavors = flavorItems.length > 0;
+                    const selectedVariantName = String(selected.variantName || "").trim();
+                    const selectedFlavor = getFlavorLabel(selected);
+
                     return (
                       <div key={groupKey} style={styles.card}>
                         {imageSrc ? (
                           <img
                             src={imageSrc}
-                            alt={groupTitle || selected.name}
+                            alt={getProductDisplayName(selected) || groupTitle || selected.name}
                             style={styles.cardImg}
                             loading="lazy"
                             decoding="async"
@@ -1234,6 +1322,14 @@ export default function App() {
                             {groupTitle || selected.name}
                           </div>
 
+                          {selectedVariantName ? (
+                            <div style={styles.selectedVariantText}>{selectedVariantName}</div>
+                          ) : null}
+
+                          {selectedFlavor ? (
+                            <div style={styles.selectedFlavorText}>Вкус: {selectedFlavor}</div>
+                          ) : null}
+
                           {subtitle ? (
                             <div style={styles.cardDesc} title={subtitle}>
                               {subtitle}
@@ -1249,12 +1345,38 @@ export default function App() {
                             ) : null}
                           </div>
 
-                          {hasVariants ? (
+                          {variantEntries.length > 1 ? (
                             <div style={styles.variantBlock}>
                               <div style={styles.variantTitle}>Варианты</div>
 
                               <div style={styles.variantList}>
-                                {items.map((item) => {
+                                {variantEntries.map(([variantKey, variantItems]) => {
+                                  const representative = variantItems[0];
+                                  const isActive = variantKey === selectedVariantKey;
+                                  return (
+                                    <button
+                                      key={variantKey}
+                                      style={{
+                                        ...styles.variantChip,
+                                        ...(isActive ? styles.variantChipActive : {}),
+                                      }}
+                                      onClick={() => selectVariant(groupKey, variantKey, items)}
+                                    >
+                                      {getVariantLabel(representative)}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {hasFlavors ? (
+                            <div style={styles.variantBlock}>
+                              <div style={styles.variantTitle}>Вкус</div>
+
+                              <div style={styles.variantList}>
+                                {flavorItems.map((item) => {
+                                  const flavorKey = getFlavorKey(item);
                                   const isActive = item.id === selected.id;
                                   return (
                                     <button
@@ -1263,9 +1385,9 @@ export default function App() {
                                         ...styles.variantChip,
                                         ...(isActive ? styles.variantChipActive : {}),
                                       }}
-                                      onClick={() => selectVariant(groupKey, item.id)}
+                                      onClick={() => selectFlavor(groupKey, selectedVariantKey, flavorKey)}
                                     >
-                                      {getVariantLabel(item)}
+                                      {getFlavorLabel(item)}
                                     </button>
                                   );
                                 })}
@@ -1332,8 +1454,8 @@ export default function App() {
                       return (
                         <div key={it.product.id} style={mobileCartRowStyle}>
                           <div style={styles.cartLeft2}>
-                            <div style={styles.cartName2} title={it.product.name}>
-                              {it.product.name}
+                            <div style={styles.cartName2} title={getProductDisplayName(it.product)}>
+                              {getProductDisplayName(it.product)}
                             </div>
                             <div style={styles.cartMeta2}>
                               {money(it.product.price)} ₽ / {it.product.unit}
@@ -1781,6 +1903,20 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 14,
     color: "#6f665d",
     lineHeight: 1.4,
+  },
+
+  selectedVariantText: {
+    fontSize: 14,
+    fontWeight: 800,
+    color: "#8a5a36",
+    marginTop: -4,
+  },
+
+  selectedFlavorText: {
+    fontSize: 13,
+    fontWeight: 700,
+    color: "#6f665d",
+    marginTop: -6,
   },
 
   cardMeta: {
