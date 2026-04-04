@@ -1,5 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { API_URL } from "./config";
+import {
+  API_PRODUCTS_URL,
+  API_ORDER_URL,
+  API_ORDERS_URL,
+  API_CANCEL_URL,
+} from "./config";
 
 declare global {
   interface Window {
@@ -339,13 +344,6 @@ function getVariantLabel(v: Product) {
   return parts.join(" · ") || String(v.name || "").trim();
 }
 
-function getDisplayPrice(group: ProductGroup, selected: Product) {
-  if (group.variants.length > 1) {
-    return `от ${money(group.minPrice)} ₽`;
-  }
-  return `${money(selected.price)} ₽ / ${selected.unit}`;
-}
-
 function getDisplayButtonText(group: ProductGroup) {
   if (group.variants.length > 1) return "Добавить выбранный вариант";
   return "Добавить в корзину";
@@ -436,17 +434,22 @@ export default function App() {
           setLoadingHint("Показан сохранённый ассортимент. Обновляем данные…");
         }
 
-        const url = `${API_URL}?action=products&nocache=1&t=${Date.now()}`;
-        const res = await fetchWithTimeout(url, {
+        const res = await fetchWithTimeout(API_PRODUCTS_URL, {
           method: "GET",
           timeoutMs: 35000,
         });
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
 
         if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
         if (data?.error) throw new Error(data.error);
 
-        const list: Product[] = (data.products || []).map((p: Product) => ({
+        const sourceProducts = Array.isArray(data?.products)
+          ? data.products
+          : Array.isArray(data)
+          ? data
+          : [];
+
+        const list: Product[] = sourceProducts.map((p: Product) => ({
           ...p,
           image: normalizeImagePath(p.image),
           groupId: String((p as any).groupId || "").trim(),
@@ -550,10 +553,7 @@ export default function App() {
 
   function getSelectedVariant(group: ProductGroup) {
     const selectedId = selectedVariants[group.key];
-    return (
-      group.variants.find((v) => v.id === selectedId) ||
-      group.variants[0]
-    );
+    return group.variants.find((v) => v.id === selectedId) || group.variants[0];
   }
 
   function selectVariant(groupKey: string, productId: string) {
@@ -591,7 +591,7 @@ export default function App() {
     if (phone.trim().length < 6) return "Укажи телефон (минимум 6 символов).";
     if (address.trim().length < 5)
       return "Укажи адрес доставки (минимум 5 символов).";
-    if (cartItems.length === 0) return "Корзина пустая.";
+    if (cartItems.length === 0) return "Корзина пуста.";
     return null;
   }
 
@@ -644,7 +644,7 @@ export default function App() {
     try {
       setSending(true);
 
-      const res = await fetch(API_URL, {
+      const res = await fetch(API_ORDER_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify(payload),
@@ -698,8 +698,7 @@ export default function App() {
       setOrdersError("");
 
       const url =
-        `${API_URL}?action=orders` +
-        `&token=${encodeURIComponent(API_TOKEN)}` +
+        `${API_ORDERS_URL}?token=${encodeURIComponent(API_TOKEN)}` +
         `&tgUserId=${encodeURIComponent(tgUserId)}` +
         `&phone=${encodeURIComponent(phoneDigits)}` +
         `&limit=30`;
@@ -737,7 +736,7 @@ export default function App() {
     const phoneDigits = normalizePhone(phone);
 
     try {
-      const res = await fetch(API_URL, {
+      const res = await fetch(API_CANCEL_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({
