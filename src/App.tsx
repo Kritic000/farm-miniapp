@@ -190,25 +190,36 @@ function getGroupTitle(group: Product[]) {
   return names[0];
 }
 
-function getProductSubtitle(product: Product, fallbackTitle?: string) {
-  const explicit = String(product.subtitle || "").trim();
-  if (explicit) return explicit;
+function getProductDisplayName(product: Product, withFlavor = true) {
+  const name = String(product.name || "").trim();
+  const variantName = String(product.variantName || "").trim();
+  const flavor = String(product.flavor || "").trim();
+  const shortName = String(product.shortName || "").trim();
 
-  const raw = String(product.description || "").trim();
-  if (!raw) return "";
+  const parts: string[] = [];
 
-  const firstSentence = raw.split(/\n|[.!?]/).map((s) => s.trim()).find(Boolean) || "";
-  if (!firstSentence) return "";
-
-  if (fallbackTitle) {
-    const normalizedTitle = fallbackTitle.toLowerCase();
-    if (firstSentence.toLowerCase() === normalizedTitle) return "";
+  if (name) {
+    parts.push(name);
   }
 
-  if (/^состав\s*:/i.test(firstSentence)) return "";
-  if (/^срок\s*хранения\s*:/i.test(firstSentence)) return "";
+  if (variantName) {
+    const nameLower = name.toLowerCase();
+    const variantLower = variantName.toLowerCase();
 
-  return firstSentence;
+    if (!nameLower.includes(variantLower)) {
+      parts.push(variantName);
+    }
+  }
+
+  if (withFlavor && flavor) {
+    parts.push(flavor);
+  }
+
+  if (shortName) {
+    parts.push(shortName);
+  }
+
+  return parts.join(" · ");
 }
 
 function getVariantKey(product: Product) {
