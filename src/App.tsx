@@ -807,13 +807,13 @@ export default function App() {
     const { utmSource, utmMedium, utmCampaign } = getUtmData();
 
     const items = cartItems.map((it) => ({
-      id: it.product.id,
-      name: it.product.name,
-      unit: getDisplayUnit(it.product),
-      price: it.product.price,
-      qty: it.qty,
-      sum: Number(calcLineSum(it.product, it.qty).toFixed(2)),
-    }));
+  id: it.product.id,
+  name: getProductDisplayName(it.product),
+  unit: getDisplayUnit(it.product),
+  price: it.product.price,
+  qty: it.qty,
+  sum: Number(calcLineSum(it.product, it.qty).toFixed(2)),
+}));
 
     const payload = {
       name: customerName,
