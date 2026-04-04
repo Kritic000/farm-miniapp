@@ -190,6 +190,32 @@ function getGroupTitle(group: Product[]) {
   return names[0];
 }
 
+function getProductSubtitle(product: Product, fallbackTitle?: string) {
+  const explicit = String(product.subtitle || "").trim();
+  if (explicit) return explicit;
+
+  const raw = String(product.description || "").trim();
+  if (!raw) return "";
+
+  const firstSentence =
+    raw
+      .split(/\n|[.!?]/)
+      .map((s) => s.trim())
+      .find(Boolean) || "";
+
+  if (!firstSentence) return "";
+
+  if (fallbackTitle) {
+    const normalizedTitle = fallbackTitle.toLowerCase();
+    if (firstSentence.toLowerCase() === normalizedTitle) return "";
+  }
+
+  if (/^состав\s*:/i.test(firstSentence)) return "";
+  if (/^срок\s*хранения\s*:/i.test(firstSentence)) return "";
+
+  return firstSentence;
+}
+
 function getProductDisplayName(product: Product, withFlavor = true) {
   const name = String(product.name || "").trim();
   const variantName = String(product.variantName || "").trim();
@@ -243,19 +269,6 @@ function getFlavorKey(product: Product) {
 
 function getFlavorLabel(product: Product) {
   return String(product.flavor || "").trim();
-}
-
-function getProductDisplayName(product: Product, withFlavor = true) {
-  const parts = [String(product.name || "").trim()].filter(Boolean);
-  const variantName = String(product.variantName || "").trim();
-  const flavor = String(product.flavor || "").trim();
-  const shortName = String(product.shortName || "").trim();
-
-  if (variantName) parts.push(variantName);
-  if (withFlavor && flavor) parts.push(flavor);
-  if (shortName) parts.push(shortName);
-
-  return parts.join(" · ");
 }
 
 function getBadgeText(group: Product[], selected: Product) {
@@ -818,13 +831,13 @@ export default function App() {
     const { utmSource, utmMedium, utmCampaign } = getUtmData();
 
     const items = cartItems.map((it) => ({
-  id: it.product.id,
-  name: getProductDisplayName(it.product),
-  unit: getDisplayUnit(it.product),
-  price: it.product.price,
-  qty: it.qty,
-  sum: Number(calcLineSum(it.product, it.qty).toFixed(2)),
-}));
+      id: it.product.id,
+      name: getProductDisplayName(it.product),
+      unit: getDisplayUnit(it.product),
+      price: it.product.price,
+      qty: it.qty,
+      sum: Number(calcLineSum(it.product, it.qty).toFixed(2)),
+    }));
 
     const payload = {
       name: customerName,
@@ -977,7 +990,6 @@ export default function App() {
     loadMyOrders();
   }, [tab]);
 
-
   function getSelectedProduct(group: Product[]) {
     const fallback = group[0];
     const groupKey = getGroupKey(fallback);
@@ -1003,8 +1015,12 @@ export default function App() {
 
     if (flavoredItems.length) {
       const flavorStateKey = `${groupKey}__${selectedVariantKey}`;
-      const selectedFlavor = selectedFlavorByGroupVariant[flavorStateKey] || getFlavorKey(flavoredItems[0]);
-      return flavoredItems.find((item) => getFlavorKey(item) === selectedFlavor) || flavoredItems[0];
+      const selectedFlavor =
+        selectedFlavorByGroupVariant[flavorStateKey] || getFlavorKey(flavoredItems[0]);
+      return (
+        flavoredItems.find((item) => getFlavorKey(item) === selectedFlavor) ||
+        flavoredItems[0]
+      );
     }
 
     return variantItems[0] || fallback;
@@ -1045,7 +1061,9 @@ export default function App() {
     if (q === 0) {
       return (
         <button style={styles.buyBtn} onClick={() => addToCart(product)}>
-          {mode === "weight" ? `Выбрать от ${getMinQty(product)} г` : `В корзину${String(product.flavor || "").trim() ? ` · ${String(product.flavor).trim()}` : ""}`}
+          {mode === "weight"
+            ? `Выбрать от ${getMinQty(product)} г`
+            : `В корзину${String(product.flavor || "").trim() ? ` · ${String(product.flavor).trim()}` : ""}`}
         </button>
       );
     }
@@ -1072,9 +1090,7 @@ export default function App() {
 
         <div style={styles.qtyHint}>
           {mode === "weight"
-            ? `Мин. ${getQtyLabel(product, getMinQty(product))}, шаг ${getStepQty(
-                product
-              )} г`
+            ? `Мин. ${getQtyLabel(product, getMinQty(product))}, шаг ${getStepQty(product)} г`
             : `Мин. ${getMinQty(product)} шт, шаг ${getStepQty(product)} шт`}
         </div>
 
@@ -1181,16 +1197,16 @@ export default function App() {
       )}
 
       {tab === "catalog" && cartCount > 0 && (
-  <button
-    style={styles.floatingCartBtn}
-    onClick={() => setTab("cart")}
-    aria-label="Открыть корзину"
-  >
-    <span style={styles.floatingCartIcon}>🛒</span>
-    <span style={styles.floatingCartText}>Корзина</span>
-    <span style={styles.floatingCartCount}>{cartCount}</span>
-  </button>
-)}
+        <button
+          style={styles.floatingCartBtn}
+          onClick={() => setTab("cart")}
+          aria-label="Открыть корзину"
+        >
+          <span style={styles.floatingCartIcon}>🛒</span>
+          <span style={styles.floatingCartText}>Корзина</span>
+          <span style={styles.floatingCartCount}>{cartCount}</span>
+        </button>
+      )}
 
       <div style={styles.container}>
         <div style={styles.headerGrid}>
@@ -2455,53 +2471,53 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   floatingCartBtn: {
-  position: "fixed",
-  left: 16,
-  bottom: 20,
-  zIndex: 2600,
-  border: "2px solid #ffffff",
-  background: "linear-gradient(135deg, #8a5a36 0%, #a56a3f 100%)",
-  color: "#fff",
-  minWidth: 132,
-  height: 56,
-  borderRadius: 999,
-  boxShadow: "0 12px 28px rgba(0,0,0,0.24)",
-  cursor: "pointer",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: 8,
-  padding: "0 16px",
-},
+    position: "fixed",
+    left: 16,
+    bottom: 20,
+    zIndex: 2600,
+    border: "2px solid #ffffff",
+    background: "linear-gradient(135deg, #8a5a36 0%, #a56a3f 100%)",
+    color: "#fff",
+    minWidth: 132,
+    height: 56,
+    borderRadius: 999,
+    boxShadow: "0 12px 28px rgba(0,0,0,0.24)",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    padding: "0 16px",
+  },
 
-floatingCartIcon: {
-  fontSize: 20,
-  lineHeight: 1,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-},
+  floatingCartIcon: {
+    fontSize: 20,
+    lineHeight: 1,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
 
-floatingCartText: {
-  fontSize: 15,
-  fontWeight: 800,
-  lineHeight: 1,
-  whiteSpace: "nowrap",
-},
+  floatingCartText: {
+    fontSize: 15,
+    fontWeight: 800,
+    lineHeight: 1,
+    whiteSpace: "nowrap",
+  },
 
-floatingCartCount: {
-  minWidth: 24,
-  height: 24,
-  borderRadius: 999,
-  background: "#ffffff",
-  color: "#8a5a36",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontSize: 12,
-  fontWeight: 900,
-  padding: "0 7px",
-  boxSizing: "border-box",
-  boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
+  floatingCartCount: {
+    minWidth: 24,
+    height: 24,
+    borderRadius: 999,
+    background: "#ffffff",
+    color: "#8a5a36",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 12,
+    fontWeight: 900,
+    padding: "0 7px",
+    boxSizing: "border-box",
+    boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
   },
 };
