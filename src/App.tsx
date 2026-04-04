@@ -1364,14 +1364,11 @@ export default function App() {
                           ) : null}
 
                           <div style={styles.cardMeta}>
-                            <span style={styles.price}>{`${money(selected.price)} ₽`}</span>
-                            {selectedUnit ? (
-                              <span style={styles.unit}> / {selectedUnit}</span>
-                            ) : null}
-                            {hasVariants && Number(selected.price) !== Number(minPrice) ? (
-                              <span style={styles.fromPriceHint}>{`от ${money(minPrice)} ₽`}</span>
-                            ) : null}
-                          </div>
+  <span style={styles.price}>{`${money(selected.price)} ₽`}</span>
+  {selectedUnit ? (
+    <span style={styles.unit}> / {selectedUnit}</span>
+  ) : null}
+</div>
 
                           {variantEntries.length > 1 ? (
                             <div style={styles.variantBlock}>
