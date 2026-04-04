@@ -25,6 +25,14 @@ type Product = {
   sellMode?: "weight" | "piece" | string;
   minQty?: number;
   stepQty?: number;
+  groupId?: string;
+  variantName?: string;
+  shortName?: string;
+  badge?: string;
+  storageType?: string;
+  storageDays?: number | string;
+  composition?: string;
+  subtitle?: string;
 };
 
 type CartItem = {
@@ -133,6 +141,98 @@ function normalizeImagePath(img?: string): string | undefined {
   if (s.startsWith("/")) return s;
   if (s.startsWith("public/")) return "/" + s.replace(/^public\//, "");
   return "/" + s;
+}
+
+function getGroupKey(product: Product) {
+  return String(product.groupId || product.id || "").trim();
+}
+
+function sanitizeGroupTitle(value: string) {
+  return String(value || "")
+    .replace(/[\s,;:/|._-]+$/, "")
+    .replace(/[\s]+$/, "")
+    .trim();
+}
+
+function getSharedPrefix(values: string[]) {
+  if (!values.length) return "";
+  let prefix = values[0] || "";
+
+  for (let i = 1; i < values.length; i += 1) {
+    const current = values[i] || "";
+    let j = 0;
+    const max = Math.min(prefix.length, current.length);
+
+    while (j < max && prefix[j].toLowerCase() === current[j].toLowerCase()) {
+      j += 1;
+    }
+
+    prefix = prefix.slice(0, j);
+    if (!prefix) break;
+  }
+
+  return sanitizeGroupTitle(prefix);
+}
+
+function getGroupTitle(group: Product[]) {
+  if (!group.length) return "";
+
+  const names = group
+    .map((p) => String(p.name || "").trim())
+    .filter(Boolean);
+
+  if (!names.length) return "";
+
+  const prefix = getSharedPrefix(names);
+  if (prefix.length >= 3) return prefix;
+
+  return names[0];
+}
+
+function getProductSubtitle(product: Product, fallbackTitle?: string) {
+  const explicit = String(product.subtitle || "").trim();
+  if (explicit) return explicit;
+
+  const raw = String(product.description || "").trim();
+  if (!raw) return "";
+
+  const firstSentence = raw.split(/\n|[.!?]/).map((s) => s.trim()).find(Boolean) || "";
+  if (!firstSentence) return "";
+
+  if (fallbackTitle) {
+    const normalizedTitle = fallbackTitle.toLowerCase();
+    if (firstSentence.toLowerCase() === normalizedTitle) return "";
+  }
+
+  if (/^состав\s*:/i.test(firstSentence)) return "";
+  if (/^срок\s*хранения\s*:/i.test(firstSentence)) return "";
+
+  return firstSentence;
+}
+
+function getVariantLabel(product: Product) {
+  const shortName = String(product.shortName || "").trim();
+  if (shortName) return shortName;
+
+  const variantName = String(product.variantName || "").trim();
+  if (variantName) return variantName;
+
+  return String(product.unit || "").trim() || String(product.name || "").trim();
+}
+
+function getBadgeText(group: Product[], selected: Product) {
+  const direct = String(selected.badge || "").trim();
+  if (direct) return direct;
+
+  const fromGroup = group
+    .map((p) => String(p.badge || "").trim())
+    .find(Boolean);
+
+  return fromGroup || "";
+}
+
+function getStorageTypeLabel(product: Product) {
+  return String(product.storageType || "").trim();
 }
 
 function loadProductsCache(): { ts: number; products: Product[] } | null {
@@ -379,6 +479,7 @@ export default function App() {
 
   const [cart, setCart] = useState<Record<string, CartItem>>({});
   const [qtyDrafts, setQtyDrafts] = useState<Record<string, string>>({});
+  const [selectedVariantByGroup, setSelectedVariantByGroup] = useState<Record<string, string>>({});
 
   const [address, setAddress] = useState("");
   const [comment, setComment] = useState("");
@@ -527,6 +628,37 @@ export default function App() {
 
     return products.filter((p) => p.category === activeCategory);
   }, [products, activeCategory]);
+
+  const groupedProducts = useMemo(() => {
+    const map = new Map<string, Product[]>();
+
+    filteredProducts.forEach((product) => {
+      const key = getGroupKey(product);
+      const current = map.get(key) || [];
+      current.push(product);
+      map.set(key, current);
+    });
+
+    return Array.from(map.entries())
+      .map(([groupKey, items]) => {
+        const sorted = [...items].sort((a, b) => {
+          const aSort = Number(a.sort) || 0;
+          const bSort = Number(b.sort) || 0;
+          return aSort - bSort;
+        });
+
+        const minSort = Math.min(
+          ...sorted.map((item) => Number(item.sort) || Number.MAX_SAFE_INTEGER)
+        );
+
+        return {
+          groupKey,
+          items: sorted,
+          minSort,
+        };
+      })
+      .sort((a, b) => a.minSort - b.minSort);
+  }, [filteredProducts]);
 
   const cartItems = useMemo(() => Object.values(cart), [cart]);
 
@@ -806,6 +938,21 @@ export default function App() {
     loadMyOrders();
   }, [tab]);
 
+
+  function getSelectedProduct(group: Product[]) {
+    const fallback = group[0];
+    const groupKey = getGroupKey(fallback);
+    const selectedId = selectedVariantByGroup[groupKey];
+    return group.find((item) => item.id === selectedId) || fallback;
+  }
+
+  function selectVariant(groupKey: string, productId: string) {
+    setSelectedVariantByGroup((prev) => ({
+      ...prev,
+      [groupKey]: productId,
+    }));
+  }
+
   function renderQtyControls(product: Product) {
     const q = qtyOf(product.id);
     const mode = getSellMode(product);
@@ -1042,20 +1189,31 @@ export default function App() {
                 </div>
 
                 <div style={styles.list}>
-                  {filteredProducts.map((p) => {
-                    const mode = getSellMode(p);
-                    const q = qtyOf(p.id);
+                  {groupedProducts.map(({ groupKey, items }) => {
+                    const selected = getSelectedProduct(items);
+                    const groupTitle = getGroupTitle(items);
+                    const subtitle = getProductSubtitle(selected, groupTitle);
+                    const badgeText = getBadgeText(items, selected);
+                    const hasVariants = items.length > 1;
+                    const selectedQty = qtyOf(selected.id);
+                    const minPrice = Math.min(...items.map((item) => Number(item.price) || 0));
+                    const imageSrc =
+                      selected.image ||
+                      items.map((item) => item.image).find(Boolean) ||
+                      "";
+                    const storageTypeLabel = getStorageTypeLabel(selected);
+                    const selectedUnit = String(selected.unit || "").trim();
 
                     return (
-                      <div key={p.id} style={styles.card}>
-                        {p.image ? (
+                      <div key={groupKey} style={styles.card}>
+                        {imageSrc ? (
                           <img
-                            src={p.image}
-                            alt={p.name}
+                            src={imageSrc}
+                            alt={groupTitle || selected.name}
                             style={styles.cardImg}
                             loading="lazy"
                             decoding="async"
-                            onClick={() => setZoomSrc(p.image || null)}
+                            onClick={() => setZoomSrc(imageSrc || null)}
                             onError={(e) => {
                               (e.currentTarget as HTMLImageElement).style.display =
                                 "none";
@@ -1066,34 +1224,90 @@ export default function App() {
                         )}
 
                         <div style={styles.cardBody}>
-                          <div style={styles.cardName} title={p.name}>
-                            {p.name}
+                          {badgeText ? (
+                            <div style={styles.topBadgesRow}>
+                              <span style={styles.sellingBadge}>{badgeText}</span>
+                            </div>
+                          ) : null}
+
+                          <div style={styles.cardName} title={groupTitle || selected.name}>
+                            {groupTitle || selected.name}
                           </div>
 
-                          {p.description ? (
-                            <div style={styles.cardDesc} title={p.description}>
-                              {p.description}
+                          {subtitle ? (
+                            <div style={styles.cardDesc} title={subtitle}>
+                              {subtitle}
                             </div>
                           ) : null}
 
                           <div style={styles.cardMeta}>
-                            <span style={styles.price}>{money(p.price)} ₽</span>
-                            <span style={styles.unit}> / {p.unit}</span>
+                            <span style={styles.price}>
+                              {hasVariants ? `от ${money(minPrice)} ₽` : `${money(selected.price)} ₽`}
+                            </span>
+                            {selectedUnit ? (
+                              <span style={styles.unit}> / {selectedUnit}</span>
+                            ) : null}
                           </div>
 
-                          {mode === "weight" && (
+                          {hasVariants ? (
+                            <div style={styles.variantBlock}>
+                              <div style={styles.variantTitle}>Варианты</div>
+
+                              <div style={styles.variantList}>
+                                {items.map((item) => {
+                                  const isActive = item.id === selected.id;
+                                  return (
+                                    <button
+                                      key={item.id}
+                                      style={{
+                                        ...styles.variantChip,
+                                        ...(isActive ? styles.variantChipActive : {}),
+                                      }}
+                                      onClick={() => selectVariant(groupKey, item.id)}
+                                    >
+                                      {getVariantLabel(item)}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {storageTypeLabel ? (
+                            <div style={styles.metaLine}>
+                              <span style={styles.metaLabel}>Тип:</span> {storageTypeLabel}
+                            </div>
+                          ) : null}
+
+                          {String(selected.storageDays || "").trim() ? (
+                            <div style={styles.metaLine}>
+                              <span style={styles.metaLabel}>Срок хранения:</span>{" "}
+                              {String(selected.storageDays).trim()}
+                              {String(selected.storageDays).trim().match(/д|сут|day/i) ? "" : " дней"}
+                            </div>
+                          ) : null}
+
+                          {String(selected.composition || "").trim() ? (
+                            <div style={styles.metaLine}>
+                              <span style={styles.metaLabel}>Состав:</span>{" "}
+                              {String(selected.composition).trim()}
+                            </div>
+                          ) : null}
+
+                          {getSellMode(selected) === "weight" && (
                             <div style={styles.weightBadge}>
-                              От {getQtyLabel(p, getMinQty(p))}, шаг {getStepQty(p)} г
+                              От {getQtyLabel(selected, getMinQty(selected))}, шаг{" "}
+                              {getStepQty(selected)} г
                             </div>
                           )}
 
-                          {q > 0 && (
+                          {selectedQty > 0 && (
                             <div style={styles.currentQtyLabel}>
-                              В корзине: {getQtyLabel(p, q)}
+                              В корзине: {getQtyLabel(selected, selectedQty)}
                             </div>
                           )}
 
-                          {renderQtyControls(p)}
+                          {renderQtyControls(selected)}
                         </div>
                       </div>
                     );
@@ -1567,7 +1781,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 14,
     color: "#6f665d",
     lineHeight: 1.4,
-    minHeight: 56,
   },
 
   cardMeta: {
@@ -1585,6 +1798,72 @@ const styles: Record<string, React.CSSProperties> = {
   unit: {
     color: "#6f665d",
     fontSize: 14,
+  },
+
+
+  topBadgesRow: {
+    display: "flex",
+    gap: 8,
+    flexWrap: "wrap",
+    marginBottom: 2,
+  },
+
+  sellingBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    background: "#f4eadf",
+    color: "#8a5a36",
+    border: "1px solid #ead7c4",
+    padding: "6px 10px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 800,
+  },
+
+  variantBlock: {
+    display: "grid",
+    gap: 8,
+  },
+
+  variantTitle: {
+    fontSize: 13,
+    fontWeight: 800,
+    color: "#6f665d",
+  },
+
+  variantList: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+
+  variantChip: {
+    border: "1px solid #e7ddd2",
+    background: "#f7f1e8",
+    color: "#5e4d3f",
+    borderRadius: 999,
+    padding: "8px 12px",
+    cursor: "pointer",
+    fontWeight: 800,
+    fontSize: 13,
+  },
+
+  variantChipActive: {
+    background: "#8a5a36",
+    color: "#fff",
+    borderColor: "#8a5a36",
+  },
+
+  metaLine: {
+    fontSize: 14,
+    lineHeight: 1.45,
+    color: "#54483d",
+  },
+
+  metaLabel: {
+    fontWeight: 800,
+    color: "#2d251d",
   },
 
   weightBadge: {
