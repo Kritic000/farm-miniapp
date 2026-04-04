@@ -1312,14 +1312,14 @@ export default function App() {
                         )}
 
                         <div style={styles.cardBody}>
-                          {badgeText ? (
-                            <div style={styles.topBadgesRow}>
-                              <span style={styles.sellingBadge}>{badgeText}</span>
+                          <div style={styles.titleRow}>
+                            <div style={styles.cardName} title={groupTitle || selected.name}>
+                              {groupTitle || selected.name}
                             </div>
-                          ) : null}
 
-                          <div style={styles.cardName} title={groupTitle || selected.name}>
-                            {groupTitle || selected.name}
+                            {badgeText ? (
+                              <span style={styles.sellingBadge}>{badgeText}</span>
+                            ) : null}
                           </div>
 
                           {selectedVariantName ? (
@@ -1337,11 +1337,12 @@ export default function App() {
                           ) : null}
 
                           <div style={styles.cardMeta}>
-                            <span style={styles.price}>
-                              {hasVariants ? `от ${money(minPrice)} ₽` : `${money(selected.price)} ₽`}
-                            </span>
+                            <span style={styles.price}>{`${money(selected.price)} ₽`}</span>
                             {selectedUnit ? (
                               <span style={styles.unit}> / {selectedUnit}</span>
+                            ) : null}
+                            {hasVariants && Number(selected.price) !== Number(minPrice) ? (
+                              <span style={styles.fromPriceHint}>{`от ${money(minPrice)} ₽`}</span>
                             ) : null}
                           </div>
 
@@ -1893,10 +1894,19 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
   },
 
+  titleRow: {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+
   cardName: {
     fontSize: 17,
     fontWeight: 800,
     lineHeight: 1.25,
+    flex: 1,
+    minWidth: 0,
   },
 
   cardDesc: {
@@ -1936,18 +1946,19 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 14,
   },
 
-
-  topBadgesRow: {
-    display: "flex",
-    gap: 8,
-    flexWrap: "wrap",
-    marginBottom: 2,
+  fromPriceHint: {
+    color: "#8d8379",
+    fontSize: 12,
+    fontWeight: 700,
+    marginLeft: 6,
   },
 
   sellingBadge: {
     display: "inline-flex",
     alignItems: "center",
-    alignSelf: "flex-start",
+    justifyContent: "center",
+    flexShrink: 0,
+    whiteSpace: "nowrap",
     background: "#f4eadf",
     color: "#8a5a36",
     border: "1px solid #ead7c4",
@@ -1955,6 +1966,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 999,
     fontSize: 12,
     fontWeight: 800,
+    maxWidth: "52%",
   },
 
   variantBlock: {
