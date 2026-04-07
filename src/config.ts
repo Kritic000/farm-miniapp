@@ -1,5 +1,5 @@
 const GS_API_URL =
-  "https://script.google.com/macros/s/PASTE_YOUR_APPS_SCRIPT_URL_HERE/exec";
+  "https://script.google.com/macros/s/AKfycbw5ljb1uQHfgfTad0BG3O7Rx9yKlsM6Qo3Hso3AexjXP410oUX_PwSp15eogowchqRspw/exec";
 
 const GS_API_TOKEN = "Kjhytccb18@";
 
