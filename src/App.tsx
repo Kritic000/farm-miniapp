@@ -4,6 +4,7 @@ import {
   API_ORDER_URL,
   API_ORDERS_URL,
   API_CANCEL_URL,
+  API_TOKEN,
 } from "./config";
 
 declare global {
@@ -868,7 +869,10 @@ export default function App() {
       const res = await fetch(API_ORDER_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          token: API_TOKEN,
+          ...payload,
+        }),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -921,7 +925,7 @@ export default function App() {
 
       const url =
         `${API_ORDERS_URL}` +
-        `?tgUserId=${encodeURIComponent(tgUserId)}` +
+        `&tgUserId=${encodeURIComponent(tgUserId)}` +
         `&phone=${encodeURIComponent(phoneDigits)}` +
         `&limit=30`;
 
@@ -962,6 +966,8 @@ export default function App() {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({
+          token: API_TOKEN,
+          action: "cancelOrder",
           orderId,
           reason: r,
           tgUserId,
