@@ -461,15 +461,21 @@ function getDisplayUnit(product: Product) {
 }
 
 function getWeightPriceBase(product: Product) {
-  const unit = String(product.unit || "").trim().toLowerCase();
+  const unit = String(product.unit || "")
+    .toLowerCase()
+    .replace(",", ".")
+    .replace(/\s+/g, "");
 
-  if (
-    unit.includes("0,1 кг") ||
-    unit.includes("0.1 кг") ||
-    unit.includes("100 г") ||
-    unit.includes("100г")
-  ) {
-    return 100;
+  // кг → граммы
+  const kgMatch = unit.match(/(\d+(?:\.\d+)?)кг/);
+  if (kgMatch) {
+    return Math.round(parseFloat(kgMatch[1]) * 1000);
+  }
+
+  // граммы
+  const gMatch = unit.match(/(\d+)г/);
+  if (gMatch) {
+    return parseInt(gMatch[1]);
   }
 
   return 1000;
