@@ -4,7 +4,6 @@ import {
   API_ORDER_URL,
   API_ORDERS_URL,
   API_CANCEL_URL,
-  API_TOKEN,
 } from "./config";
 
 declare global {
@@ -841,7 +840,6 @@ export default function App() {
     }));
 
     const payload = {
-      token: API_TOKEN,
       name: customerName,
       phone,
       address,
@@ -923,7 +921,7 @@ export default function App() {
 
       const url =
         `${API_ORDERS_URL}` +
-        `&tgUserId=${encodeURIComponent(tgUserId)}` +
+        `?tgUserId=${encodeURIComponent(tgUserId)}` +
         `&phone=${encodeURIComponent(phoneDigits)}` +
         `&limit=30`;
 
@@ -964,8 +962,6 @@ export default function App() {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({
-          token: API_TOKEN,
-          action: "cancelOrder",
           orderId,
           reason: r,
           tgUserId,
