@@ -841,6 +841,7 @@ export default function App() {
     }));
 
     const payload = {
+      token: API_TOKEN,
       name: customerName,
       phone,
       address,
@@ -869,10 +870,7 @@ export default function App() {
       const res = await fetch(API_ORDER_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({
-          token: API_TOKEN,
-          ...payload,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json().catch(() => ({}));
